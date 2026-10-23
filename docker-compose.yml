@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: repuestos-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-repuestos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-repuestos_dev}
+      POSTGRES_DB: ${DB_NAME:-repuestos}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-repuestos} -d ${DB_NAME:-repuestos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Para desarrollo basta con: docker compose up -d postgres
+  # y correr la API con npm run start:dev.
+  # Este servicio sirve para levantar todo en contenedores: docker compose --profile app up --build
+  api:
+    profiles: ["app"]
+    build: .
+    container_name: repuestos-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-repuestos}
+      DB_PASSWORD: ${DB_PASSWORD:-repuestos_dev}
+      DB_NAME: ${DB_NAME:-repuestos}
+      DB_SYNCHRONIZE: "true"
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
