@@ -15,8 +15,28 @@ npm run start:dev                 # API en http://localhost:3000/api
 
 - Swagger (probar los endpoints desde el navegador): http://localhost:3000/docs
 - Tests de los services: `npm test`
+- Pruebas de la API con Postman: carpeta `postman/` (ver abajo)
 - Todo en contenedores: `docker compose --profile app up --build`
 - Si el puerto 5432 ya está ocupado en tu máquina, cambia `DB_PORT` en `.env`.
+
+## Pruebas con Postman
+
+1. Levanta la API (`npm run start:dev`).
+2. En Postman: **Import** → `postman/repuestos-service.postman_collection.json`.
+3. Clic derecho en la colección → **Run collection** → **Run**. Se ejecuta todo en orden y cada petición
+   trae sus propias verificaciones (pestaña *Tests*).
+
+El flujo crea repuesto, proveedor y cliente, compra 10, vende 3, comprueba que el stock queda en 7 y que
+los movimientos y números `C-` / `V-` son correctos. Luego prueba los errores (409 por stock insuficiente
+o SKU repetido, 400 por datos inválidos, 404) y las operaciones de stock. Los ids se guardan solos en
+variables de la colección y los datos son únicos en cada corrida, así que se puede repetir. La URL base
+es la variable `baseUrl` (`http://localhost:3000/api`); si cambias el puerto, edítala en la pestaña
+*Variables* de la colección.
+
+## MCP para agentes
+
+La carpeta `mcp-repuestos/` (proyecto aparte, con su propio `package.json`) expone la API como herramientas
+MCP para agentes. Ver `mcp-repuestos/README.md`. La API no depende de él.
 
 ## Un módulo por tabla
 
