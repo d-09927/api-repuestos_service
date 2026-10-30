@@ -27,6 +27,7 @@ import { VentasController } from './infrastructure/http/ventas.controller';
     TypeOrmModule.forFeature([VentaOrmEntity]),
   ],
   controllers: [VentasController],
+  exports: [VentasService],
   providers: [
     VentasService,
     { provide: VentaRepositoryPort, useClass: VentaTypeOrmRepository },

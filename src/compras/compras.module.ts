@@ -27,6 +27,7 @@ import { ComprasController } from './infrastructure/http/compras.controller';
     TypeOrmModule.forFeature([CompraOrmEntity]),
   ],
   controllers: [ComprasController],
+  exports: [ComprasService],
   providers: [
     ComprasService,
     { provide: CompraRepositoryPort, useClass: CompraTypeOrmRepository },

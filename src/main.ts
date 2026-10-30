@@ -7,7 +7,8 @@ import { DomainExceptionFilter } from './common/domain-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.setGlobalPrefix('api');
+  // El MCP queda fuera del prefijo: los agentes se conectan a /mcp.
+  app.setGlobalPrefix('api', { exclude: ['mcp'] });
   // Validación con zod: cada DTO es un esquema; responde 400 con el detalle de lo que falla.
   app.useGlobalPipes(new ZodValidationPipe());
   app.useGlobalFilters(new DomainExceptionFilter());

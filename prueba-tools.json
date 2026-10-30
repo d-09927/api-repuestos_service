@@ -1,0 +1,23 @@
+{
+  "model": "qwen3.5:4b",
+  "messages": [
+    { "role": "user", "content": "¿Tienen filtro de aceite para un Chevrolet Spark 2018?" }
+  ],
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "buscar_repuestos_por_vehiculo",
+      "description": "Busca repuestos compatibles con un vehículo",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehiculoMarca": { "type": "string" },
+          "vehiculoModelo": { "type": "string" },
+          "vehiculoAnio": { "type": "integer" },
+          "texto": { "type": "string" }
+        },
+        "required": ["vehiculoMarca", "vehiculoModelo"]
+      }
+    }
+  }]
+}

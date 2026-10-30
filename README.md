@@ -35,8 +35,13 @@ es la variable `baseUrl` (`http://localhost:3000/api`); si cambias el puerto, ed
 
 ## MCP para agentes
 
-La carpeta `mcp-repuestos/` (proyecto aparte, con su propio `package.json`) expone la API como herramientas
-MCP para agentes. Ver `mcp-repuestos/README.md`. La API no depende de él.
+El módulo `src/mcp/` expone los services como herramientas MCP en `POST /mcp` (Streamable HTTP), con
+cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 13 herramientas de lectura;
+las 4 de escritura (reservar, liberar, vender, comprar) solo aparecen con `MCP_PERMITIR_ESCRITURA=true` y
+exigen `confirmado: true`.
+
+- Probar a mano: `npx @modelcontextprotocol/inspector` → Streamable HTTP → `http://localhost:3000/mcp`.
+- Prueba automática de punta a punta (API levantada con escritura habilitada): `npm run test:mcp`.
 
 ## Un módulo por tabla
 

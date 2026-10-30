@@ -6,6 +6,7 @@ import { UnidadDeTrabajoModule } from './common/unidad-de-trabajo/unidad-de-trab
 import { CompatibilidadesModule } from './compatibilidades/compatibilidades.module';
 import { CompraDetallesModule } from './compra-detalles/compra-detalles.module';
 import { ComprasModule } from './compras/compras.module';
+import { McpModule } from './mcp/mcp.module';
 import { MovimientosModule } from './movimientos/movimientos.module';
 import { ProveedoresModule } from './proveedores/proveedores.module';
 import { RepuestosModule } from './repuestos/repuestos.module';
@@ -41,6 +42,8 @@ import { VentasModule } from './ventas/ventas.module';
     CompraDetallesModule,
     VentasModule,
     VentaDetallesModule,
+    // Puerta de entrada para agentes (llama a los services de arriba).
+    McpModule,
   ],
 })
 export class AppModule {}

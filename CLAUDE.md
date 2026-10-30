@@ -1,0 +1,96 @@
+# CLAUDE.md — Servicio de repuestos
+
+Servicio del sector **repuestos** de una concesionaria de carros (catálogo, stock, proveedores, clientes,
+compras y ventas). Es el primero de varios microservicios por sector (luego contabilidad, taller y
+concesionario), cada uno con su API, su base de datos, su MCP y su agente.
+
+Stack: NestJS 11, PostgreSQL, TypeORM 0.3, **zod 4 + nestjs-zod** para validar, jest. El proyecto es CommonJS
+(imports relativos sin `.js`). Idioma del código, comentarios y respuestas: español.
+
+## Comandos
+
+```bash
+cp .env.example .env
+docker compose up -d postgres     # Postgres en Docker (si el 5432 está ocupado, cambia DB_PORT en .env)
+npm install
+npm run start:dev                 # API en http://localhost:3000/api · Swagger en /docs
+npm test                          # tests de los services, sin base de datos
+npm run build
+```
+
+- Para empezar con la base de datos limpia: `docker compose down -v` y volver a levantarla.
+- `DB_SYNCHRONIZE=true` crea las tablas solas (solo desarrollo). Producción: migraciones y las dos
+  secuencias `compras_consecutivo_seq` / `ventas_consecutivo_seq`.
+- El detalle de endpoints, tablas y reglas está en `README.md`.
+
+## Arquitectura (no romper estas reglas)
+
+Un **módulo por tabla**, sin mezclar lógica ni tablas. Los diez módulos: `repuestos`, `compatibilidades`,
+`stock`, `movimientos`, `proveedores`, `clientes`, `compras`, `compra-detalles`, `ventas`, `venta-detalles`.
+
+```
+src/<modulo>/
+  <modulo>.module.ts
+  application/   <modulo>.service.ts (casos de uso y reglas) + dto/ (commands, queries, results) + *.service.spec.ts
+  domain/        entities/ (solo datos) · ports/ · enums/ · errors/
+  infrastructure/ adapters/ (*.typeorm.repository.ts, *.local.adapter.ts) · entities/ (*.orm-entity.ts) · http/ (controller, dto zod, *.response.ts)
+```
+
+- Las **entidades de dominio son clases planas** (campos + constructor con `Object.assign`). Sin lógica.
+- Las **reglas de negocio viven en los services**. Los controladores son delgados: reciben, llaman al
+  service y responden. Nunca ponen lógica.
+- Los **puertos son clases abstractas** (sirven de token de inyección). Un módulo nunca usa el
+  repositorio ni la tabla de otro: pide lo que necesita por un puerto (`*.service.port.ts`) que
+  implementa un `*.local.adapter.ts`. Si un módulo pasa a ser otro servicio, se cambia por un `*.http.adapter.ts`.
+- Los DTO HTTP son esquemas **zod** (`.strict()` en los de creación) en `infrastructure/http/dto`.
+- Relaciones `@ManyToOne` / `@OneToMany` solo en las entidades ORM (capa de infraestructura). Entre sectores
+  distintos no habrá llaves foráneas: se hablan por HTTP o eventos.
+- Errores de negocio: `ValidationDomainError` → 400, `NotFoundError` → 404, `ConflictError` → 409
+  (`common/domain-exception.filter.ts`).
+- **Dinero en centavos enteros** (`common/dinero.ts`). Números de documento C-000001 / V-000001 salen de
+  secuencias de Postgres.
+- **Transacciones entre módulos**: `common/unidad-de-trabajo` (`UnidadDeTrabajoPort`). El stock se mueve con
+  bloqueos `pessimistic_write` y, si el documento no se guarda, se revierte (compensación).
+- Cada service nuevo lleva su `*.service.spec.ts` con repositorios en memoria (sin base de datos).
+
+## MCP (puerta de entrada para agentes)
+
+Se construye **como la Panadería La Espiga**: el MCP vive *dentro* de la API, como módulo `src/mcp/`, y llama a
+los **services** de los demás módulos (no a HTTP ni a las tablas). Referencia local, solo lectura:
+`C:\Users\jwilm\OneDrive\Documents\COMPLEMENTARIO-IA\ia-sena\espiga-pro\src\mcp\`.
+
+```
+src/mcp/
+  mcp.module.ts        importa los módulos cuyos services usa
+  mcp.controller.ts    @Controller('mcp'); token Bearer (MCP_TOKEN); createMcpHandler + toNodeHandler
+  herramientas.ts      crearServidorMcp(servicios, opciones): un McpServer por petición
+  herramientas/        un archivo por dominio: repuestos, stock, personas, documentos, escritura
+```
+
+- SDK v2: `@modelcontextprotocol/server` y `@modelcontextprotocol/node` (tiene build CommonJS). `inputSchema: z.object({...})`.
+- 13 herramientas de **lectura** siempre; 4 de **escritura** (reservar, liberar, vender, comprar) solo si
+  `MCP_PERMITIR_ESCRITURA=true`. Las de escritura exigen `confirmado: true` y, con `false`, devuelven un resumen.
+- Los errores se devuelven como resultado `isError` con un mensaje legible, no como excepción.
+- `ComprasModule` y `VentasModule` deben exportar su service (`exports: [...]`) para que el MCP los use.
+- Variables: `MCP_TOKEN` (sin él, `/mcp` responde 503) y `MCP_PERMITIR_ESCRITURA`.
+- Probar con `npx @modelcontextprotocol/inspector` (Streamable HTTP, `http://localhost:3000/mcp`, cabecera
+  `Authorization: Bearer <MCP_TOKEN>`).
+
+## Estado y pendientes (rama `feature/mcp-repuestos`)
+
+1. ✅ Carpeta vieja `mcp-repuestos/` borrada y deshechos los cambios de `tsconfig*.json` y `.dockerignore`.
+2. ✅ `src/mcp/` funcionando dentro de la API en `/mcp` (excluido del prefijo `/api` en `main.ts`).
+3. ✅ Prueba de punta a punta: `test/mcp.e2e-spec.ts`, se corre con `npm run test:mcp` con la API levantada
+   (`MCP_TOKEN=dev-mcp-token`, `MCP_PERMITIR_ESCRITURA=true`). Usa `@modelcontextprotocol/client` (devDependency).
+4. **Agente orquestador** (en código, sin n8n), también como módulo dentro de la API siguiendo `chat/` e `ia/` de La
+   Espiga (un `IaService` con API compatible con OpenAI + historial). Usa las herramientas del MCP en un bucle.
+   Modelo por decidir: NVIDIA (API compatible con OpenAI) o Claude.
+5. Más adelante: anulaciones y devoluciones, autenticación y roles, eventos entre servicios
+   (`stock.bajo`, `venta.confirmada`) y agentes de los otros sectores coordinados por un agente superior.
+
+## Cómo trabajar aquí
+
+- Antes de crear algo, mira cómo lo hace un módulo existente (por ejemplo `clientes` o `proveedores`) y copia esa forma.
+- Trabaja sobre este proyecto; no crees proyectos nuevos ni entregues zips.
+- No hagas commit directo a `main`; usa ramas.
+- Si una decisión cambia la estructura (carpetas, nombres, dónde va la lógica), pregunta antes.
