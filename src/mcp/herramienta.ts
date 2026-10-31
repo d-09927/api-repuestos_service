@@ -6,6 +6,7 @@ import { ProveedoresService } from "../proveedores/application/proveedores.servi
 import { ClientesService } from "../clientes/application/clientes.service";
 import { ComprasService } from "../compras/application/compras.service";
 import { VentasService } from "../ventas/application/ventas.service";
+import { registrarCotizacion } from "./herramientas/cotizacion.herramientas";
 import { registrarDocumentos } from "./herramientas/documentos.herramientas";
 import { registrarEscritura } from "./herramientas/escritura.herramientas";
 import { registrarPersonas } from "./herramientas/personas.herramientas";
@@ -26,6 +27,10 @@ export interface Servicios {
 
 export interface OpcionesMcp {
   permitirEscritura: boolean;
+  /** Nombre con el que nos identificamos ante facturación (TIENDA_NOMBRE). */
+  tienda: string;
+  /** IVA incluido en los precios del catálogo (IVA_PORCENTAJE). */
+  ivaPorcentaje: number;
 }
 
 
@@ -47,6 +52,7 @@ servicios: Servicios, opciones:OpcionesMcp
     registrarStock(servidor, servicios);
     registrarPersonas(servidor, servicios);
     registrarDocumentos(servidor, servicios);
+    registrarCotizacion(servidor, servicios, opciones);
 
     // Las de escritura ni siquiera aparecen si el servidor está en solo lectura.
     if (opciones.permitirEscritura) registrarEscritura(servidor, servicios);

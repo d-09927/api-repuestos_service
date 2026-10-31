@@ -50,8 +50,9 @@ export class RepuestoTypeOrmRepository extends RepuestoRepositoryPort {
 
     if (f.texto) {
       const patron = `%${f.texto.replace(/[\\%_]/g, '\\$&')}%`;
-      qb.andWhere('(r.nombre ILIKE :patron OR r.sku ILIKE :patron OR r.descripcion ILIKE :patron)', { patron });
+      qb.andWhere('(r.nombre ILIKE :patron OR r.sku ILIKE :patron OR r.codigoUniversal ILIKE :patron OR r.descripcion ILIKE :patron)', { patron });
     }
+    if (f.codigoUniversal) qb.andWhere('r.codigoUniversal = :codigo', { codigo: f.codigoUniversal.trim().toUpperCase() });
     if (f.marca) qb.andWhere('LOWER(r.marca) = LOWER(:marca)', { marca: f.marca });
     if (f.categoria) qb.andWhere('LOWER(r.categoria) = LOWER(:categoria)', { categoria: f.categoria });
 
@@ -67,6 +68,7 @@ export class RepuestoTypeOrmRepository extends RepuestoRepositoryPort {
     return new Repuesto({
       id: f.id,
       sku: f.sku,
+      codigoUniversal: f.codigoUniversal,
       nombre: f.nombre,
       descripcion: f.descripcion,
       marca: f.marca,

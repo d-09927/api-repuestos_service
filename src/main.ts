@@ -24,7 +24,7 @@ async function bootstrap() {
   );
   SwaggerModule.setup('docs', app, cleanupOpenApiDoc(documento));
 
-  const puerto = Number(process.env.PORT ?? 3000);
+  const puerto = Number(process.env.PORT ?? 3100);
   await app.listen(puerto);
   console.log(`API lista en http://localhost:${puerto}/api  |  Swagger: http://localhost:${puerto}/docs`);
 }

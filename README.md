@@ -36,12 +36,33 @@ es la variable `baseUrl` (`http://localhost:3000/api`); si cambias el puerto, ed
 ## MCP para agentes
 
 El módulo `src/mcp/` expone los services como herramientas MCP en `POST /mcp` (Streamable HTTP), con
-cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 13 herramientas de lectura;
+cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 14 herramientas de lectura;
 las 4 de escritura (reservar, liberar, vender, comprar) solo aparecen con `MCP_PERMITIR_ESCRITURA=true` y
 exigen `confirmado: true`.
 
 - Probar a mano: `npx @modelcontextprotocol/inspector` → Streamable HTTP → `http://localhost:3000/mcp`.
 - Prueba automática de punta a punta (API levantada con escritura habilitada): `npm run test:mcp`.
+
+### Para facturación: `consultar_precio_repuesto`
+
+Facturación (otro grupo) cotiza con los **códigos universales** del taller (`PAS-DEL-CER`, `AMO-DEL-GAS`…), no con
+nuestro SKU. Cada repuesto puede tener un `codigoUniversal` (no es único: varias marcas comparten código).
+`consultar_precio_repuesto { codigo_repuesto, cantidad }` responde `tienda`, `precio_unitario` (COP entero **sin IVA**,
+como lo pide facturación; nuestro catálogo guarda el precio con IVA), `precio_unitario_con_iva`, `iva_unitario`, `disponible`, las bodegas y las marcas alternativas. Configuración:
+`TIENDA_NOMBRE` e `IVA_PORCENTAJE` (19). El contrato que se les entrega está en `docs/contrato-repuestos.xlsx`.
+
+Para cargar los 15 códigos universales del taller con stock de prueba (con la API levantada):
+`npm run sembrar:codigos` (se puede repetir; no duplica).
+
+## Agente de repuestos
+
+`POST /api/agente/mensajes` con `{ "texto": "..." }` conversa con un cliente: consulta repuestos y existencias y
+registra ventas (siempre con un resumen previo y la confirmación del cliente). La respuesta trae un
+`conversacionId`; envíelo en los siguientes mensajes para continuar la misma conversación (se guarda en la tabla
+`agente_mensajes`). El agente usa las herramientas del MCP por HTTP, así que necesita `MCP_TOKEN`,
+`MCP_PERMITIR_ESCRITURA=true` y las variables `IA_*` / `AGENTE_*` de `.env.example`.
+
+Con Ollama local hay que crear antes el modelo con más contexto: `ollama create qwen3.5-agente -f ollama/Modelfile`.
 
 ## Un módulo por tabla
 

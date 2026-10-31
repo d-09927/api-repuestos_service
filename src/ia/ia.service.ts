@@ -9,7 +9,7 @@ export interface LlamadaHerramienta {
 
 export type Mensaje = 
     | { role: 'system' | 'user'; content:string}
-    | { role: 'assitant'; content:string | null; tool_calls?:  LlamadaHerramienta[]}
+    | { role: 'assistant'; content:string | null; tool_calls?:  LlamadaHerramienta[]}
     | { role: 'tool'; tool_call_id:string; content:string}
 
 
@@ -18,7 +18,7 @@ export interface Herramienta {
   function: { name: string; description?: string; parameters: Record<string, unknown> };
 }
 
-export interface RepuestaModelo {
+export interface RespuestaModelo {
     texto:string;
     llamadas: LlamadaHerramienta[];
 }
@@ -37,7 +37,7 @@ export class IaService{
         this.modelo = config.get<string>('IA_MODELO', 'qwen3.5:4b');
     }
 
-    async completar (mensajes: Mensaje[], herramientas:Herramienta[]=[]): Promise<RepuestaModelo> {
+    async completar (mensajes: Mensaje[], herramientas:Herramienta[]=[]): Promise<RespuestaModelo> {
         let respuesta: Response;
 
         try {
@@ -61,7 +61,14 @@ export class IaService{
         }
 
         const datos = await respuesta.json();
-        const mensaje = datos.choices?.[0]?.message ?? {};
+         const eleccion = datos.choices?.[0];
+    // "length": el modelo se quedó sin espacio de contexto y la respuesta llegó cortada.
+    if (eleccion?.finish_reason === 'length') {
+      throw new ServiceUnavailableException(
+        'El modelo se quedó sin contexto (finish_reason=length): aumente num_ctx del modelo.',
+      );
+    }
+        const mensaje = eleccion?.message ?? {};
         return { texto: mensaje.content ?? '', llamadas:mensaje.tool_calls ?? []}
     }
 }

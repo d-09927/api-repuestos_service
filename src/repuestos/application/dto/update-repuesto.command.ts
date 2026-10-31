@@ -1,6 +1,8 @@
 import { CompatibilidadCommand } from './create-repuesto.command';
 
 export interface UpdateRepuestoCommand {
+  /** null lo quita. */
+  codigoUniversal?: string | null;
   nombre?: string;
   descripcion?: string;
   marca?: string;

@@ -4,6 +4,7 @@ export function toRepuestoResponse({ repuesto: r, compatibilidad }: RepuestoDeta
   return {
     id: r.id,
     sku: r.sku,
+    codigoUniversal: r.codigoUniversal,
     nombre: r.nombre,
     descripcion: r.descripcion,
     marca: r.marca,

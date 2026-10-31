@@ -13,6 +13,7 @@ import { RepuestosModule } from './repuestos/repuestos.module';
 import { StockModule } from './stock/stock.module';
 import { VentaDetallesModule } from './venta-detalles/venta-detalles.module';
 import { VentasModule } from './ventas/ventas.module';
+import { AgenteModule } from './agente/agente.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { VentasModule } from './ventas/ventas.module';
     VentaDetallesModule,
     // Puerta de entrada para agentes (llama a los services de arriba).
     McpModule,
+    AgenteModule
   ],
 })
 export class AppModule {}

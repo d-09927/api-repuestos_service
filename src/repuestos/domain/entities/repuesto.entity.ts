@@ -2,6 +2,8 @@
 export class Repuesto {
   id: string;
   sku: string;
+  /** Código universal (igual en todas las tiendas, el que usan taller y facturación). Varias marcas pueden compartirlo. */
+  codigoUniversal: string | null;
   nombre: string;
   descripcion: string | null;
   marca: string;

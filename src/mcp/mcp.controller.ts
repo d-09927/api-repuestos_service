@@ -48,7 +48,11 @@ export class McpController{
                 {
                     repuestos,stock,ventas,clientes,compras,movimientos,proveedores
                 },
-                { permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true'},
+                {
+                    permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true',
+                    tienda: this.config.get<string>('TIENDA_NOMBRE', 'Tienda de repuestos'),
+                    ivaPorcentaje: Number(this.config.get('IVA_PORCENTAJE', 19)),
+                },
             ),
         );
         this.atender = toNodeHandler(manejador)

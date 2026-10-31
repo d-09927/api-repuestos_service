@@ -7,6 +7,7 @@ export interface CompatibilidadCommand {
 
 export interface CreateRepuestoCommand {
   sku: string;
+  codigoUniversal?: string | null;
   nombre: string;
   descripcion?: string;
   marca: string;

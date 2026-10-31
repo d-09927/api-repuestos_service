@@ -3,6 +3,8 @@ import { Repuesto } from '../entities/repuesto.entity';
 
 export interface FiltrosRepuesto {
   texto?: string;
+  /** Exacto (se guarda en mayúsculas). */
+  codigoUniversal?: string;
   marca?: string;
   categoria?: string;
   /** Si viene, solo se listan estos repuestos (p. ej. los compatibles con un vehículo). */

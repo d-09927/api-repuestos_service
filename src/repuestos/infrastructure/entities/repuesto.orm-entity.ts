@@ -19,6 +19,11 @@ export class RepuestoOrmEntity {
   @Column({ length: 50 })
   sku: string;
 
+  /** No es único: varias marcas pueden tener el mismo código universal. */
+  @Index()
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  codigoUniversal: string | null;
+
   @Column({ length: 200 })
   nombre: string;
 

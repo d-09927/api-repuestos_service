@@ -23,6 +23,7 @@ const LECTURA = [
   'obtener_venta',
   'consultar_compras',
   'obtener_compra',
+  'consultar_precio_repuesto',
 ];
 const ESCRITURA = ['reservar_repuesto', 'liberar_reserva', 'registrar_venta', 'registrar_compra'];
 
@@ -88,7 +89,7 @@ describe('MCP de repuestos (punta a punta)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('lista las 13 herramientas de lectura y las 4 de escritura', async () => {
+  it('lista las 14 herramientas de lectura y las 4 de escritura', async () => {
     const { tools } = await cliente.listTools();
     const nombres = tools.map((t) => t.name).sort();
     expect(nombres).toEqual([...LECTURA, ...ESCRITURA].sort());
@@ -153,6 +154,56 @@ describe('MCP de repuestos (punta a punta)', () => {
 
     const stock = await llamar(cliente, 'consultar_stock', { repuestoId });
     expect(stock.datos.totalDisponible).toBe(7);
+  });
+
+  describe('consultar_precio_repuesto (para facturación)', () => {
+    const codigo = `TST-${sufijo}`.toUpperCase();
+
+    beforeAll(async () => {
+      // Dos marcas con el mismo código universal: la cara tiene stock, la barata no.
+      const conStock = await crear<{ id: string }>('repuestos', {
+        sku: `CON-${sufijo}`, codigoUniversal: codigo, nombre: 'Pastillas prueba con stock', marca: 'Bosch', categoria: 'Frenos', precio: 119000,
+      });
+      await crear('repuestos', {
+        sku: `SIN-${sufijo}`, codigoUniversal: codigo, nombre: 'Pastillas prueba sin stock', marca: 'Genérica', categoria: 'Frenos', precio: 100000,
+      });
+      await crear('stock/entradas', { repuestoId: conStock.id, bodega: 'NORTE', cantidad: 5, referencia: 'E2E' });
+    });
+
+    it('ofrece la marca que alcanza, con precio SIN IVA y la bodega', async () => {
+      const r = await llamar(cliente, 'consultar_precio_repuesto', { codigo_repuesto: codigo.toLowerCase(), cantidad: 2 });
+
+      expect(r.isError).toBe(false);
+      expect(r.datos).toMatchObject({
+        codigo_repuesto: codigo,
+        cantidad: 2,
+        tienda: expect.any(String),
+        precio_unitario: 100000,
+        precio_incluye_iva: false,
+        precio_unitario_con_iva: 119000,
+        iva_unitario: 19000,
+        disponible: true,
+        unidades_disponibles: 5,
+        repuesto: { sku: `CON-${sufijo}`.toUpperCase() },
+        bodegas: [{ bodega: 'NORTE', disponible: 5 }],
+      });
+      expect(r.datos.alternativas).toEqual([expect.objectContaining({ sku: `SIN-${sufijo}`.toUpperCase(), disponible: false })]);
+    });
+
+    it('si no alcanza responde disponible=false con el motivo (no es un error)', async () => {
+      const r = await llamar(cliente, 'consultar_precio_repuesto', { codigo_repuesto: codigo, cantidad: 10 });
+
+      expect(r.isError).toBe(false);
+      expect(r.datos.disponible).toBe(false);
+      expect(r.datos.mensaje).toMatch(/Solo hay 5/);
+    });
+
+    it('un código que no manejamos responde precio null y disponible=false', async () => {
+      const r = await llamar(cliente, 'consultar_precio_repuesto', { codigo_repuesto: `NO-EXISTE-${sufijo}`, cantidad: 1 });
+
+      expect(r.isError).toBe(false);
+      expect(r.datos).toMatchObject({ disponible: false, precio_unitario: null, mensaje: expect.stringMatching(/no maneja/) });
+    });
   });
 
   it('id inexistente: error legible de "No existe"', async () => {

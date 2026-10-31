@@ -92,4 +92,34 @@ describe('RepuestosService', () => {
     await service.desactivar(repuesto.id);
     await expect(service.verificarActivo(repuesto.id)).rejects.toThrow('desactivado');
   });
+
+  it('normaliza el código universal; sin código queda null', async () => {
+    const { repuesto } = await service.crear({ ...base, codigoUniversal: ' fil-ace-std ' });
+    expect(repuesto.codigoUniversal).toBe('FIL-ACE-STD');
+
+    const otro = await service.crear({ ...base, sku: 'OTRO', codigoUniversal: '  ' });
+    expect(otro.repuesto.codigoUniversal).toBeNull();
+  });
+
+  it('varias marcas pueden compartir el código universal (no es único)', async () => {
+    await service.crear({ ...base, sku: 'BOS-FIL', codigoUniversal: 'FIL-ACE-STD' });
+    await expect(service.crear({ ...base, sku: 'MAN-FIL', codigoUniversal: 'FIL-ACE-STD' })).resolves.toBeDefined();
+  });
+
+  it('en la actualización el código universal se cambia o se quita con null', async () => {
+    const { repuesto } = await service.crear({ ...base, codigoUniversal: 'FIL-ACE-STD' });
+
+    await service.actualizar(repuesto.id, { codigoUniversal: 'fil-aire-std' });
+    expect((await service.obtener(repuesto.id)).codigoUniversal).toBe('FIL-AIRE-STD');
+
+    await service.actualizar(repuesto.id, { nombre: 'Filtro' });
+    expect((await service.obtener(repuesto.id)).codigoUniversal).toBe('FIL-AIRE-STD');
+
+    await service.actualizar(repuesto.id, { codigoUniversal: null });
+    expect((await service.obtener(repuesto.id)).codigoUniversal).toBeNull();
+  });
+
+  it('rechaza un código universal de más de 50 caracteres', async () => {
+    await expect(service.crear({ ...base, codigoUniversal: 'X'.repeat(51) })).rejects.toThrow('50 caracteres');
+  });
 });
