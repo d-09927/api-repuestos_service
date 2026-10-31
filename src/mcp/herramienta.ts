@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/server";
+import { AgenteService } from "../agente/application/agente.service";
 import { RepuestosService } from "../repuestos/application/repuestos.service";
 import { StockService } from "../stock/application/stock.service";
 import { MovimientosService } from "../movimientos/application/movimientos.service";
@@ -6,6 +7,7 @@ import { ProveedoresService } from "../proveedores/application/proveedores.servi
 import { ClientesService } from "../clientes/application/clientes.service";
 import { ComprasService } from "../compras/application/compras.service";
 import { VentasService } from "../ventas/application/ventas.service";
+import { registrarAgente } from "./herramientas/agente.herramientas";
 import { registrarCotizacion } from "./herramientas/cotizacion.herramientas";
 import { registrarDocumentos } from "./herramientas/documentos.herramientas";
 import { registrarEscritura } from "./herramientas/escritura.herramientas";
@@ -23,6 +25,7 @@ export interface Servicios {
   clientes: ClientesService;
   compras: ComprasService;
   ventas: VentasService;
+  agente: AgenteService;
 }
 
 export interface OpcionesMcp {
@@ -53,6 +56,8 @@ servicios: Servicios, opciones:OpcionesMcp
     registrarPersonas(servidor, servicios);
     registrarDocumentos(servidor, servicios);
     registrarCotizacion(servidor, servicios, opciones);
+    // Puerta de entrada de los agentes de otros sectores.
+    registrarAgente(servidor, servicios);
 
     // Las de escritura ni siquiera aparecen si el servidor está en solo lectura.
     if (opciones.permitirEscritura) registrarEscritura(servidor, servicios);

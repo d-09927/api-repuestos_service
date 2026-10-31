@@ -24,6 +24,7 @@ const LECTURA = [
   'consultar_compras',
   'obtener_compra',
   'consultar_precio_repuesto',
+  'hablar_con_repuestos',
 ];
 const ESCRITURA = ['reservar_repuesto', 'liberar_reserva', 'registrar_venta', 'registrar_compra'];
 
@@ -89,7 +90,7 @@ describe('MCP de repuestos (punta a punta)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('lista las 14 herramientas de lectura y las 4 de escritura', async () => {
+  it('lista las 15 herramientas de lectura y las 4 de escritura', async () => {
     const { tools } = await cliente.listTools();
     const nombres = tools.map((t) => t.name).sort();
     expect(nombres).toEqual([...LECTURA, ...ESCRITURA].sort());

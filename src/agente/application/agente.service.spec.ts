@@ -3,7 +3,7 @@ import { NotFoundError } from '../../common/domain-error';
 import type { IaService, LlamadaHerramienta, Mensaje, RespuestaModelo } from '../../ia/ia.service';
 import { MensajeConversacion } from '../domain/entities/mensaje-conversacion.entity';
 import { ConversacionRepositoryPort } from '../domain/ports/conversacion.repository.port';
-import { AgenteService, LIMITE_HISTORIAL, MAX_VUELTAS } from './agente.service';
+import { AgenteService, LIMITE_HISTORIAL, MAX_VUELTAS, PUERTA_DEL_AGENTE } from './agente.service';
 import type { McpClienteService, SesionMcp } from './mcp-cliente.service';
 
 /** Repositorio en memoria: permite probar la memoria del agente sin base de datos. */
@@ -31,6 +31,8 @@ const pide = (id: string, name: string, args: object): LlamadaHerramienta => ({
 });
 const textoFinal = (texto: string): RespuestaModelo => ({ texto, llamadas: [] });
 const pideHerramientas = (...llamadas: LlamadaHerramienta[]): RespuestaModelo => ({ texto: '', llamadas });
+const herramienta = (name: string) => ({ type: 'function' as const, function: { name, parameters: { type: 'object' } } });
+const nombres = (lista: unknown) => (lista as { function: { name: string } }[]).map((h) => h.function.name);
 
 describe('AgenteService', () => {
   let completar: jest.Mock<Promise<RespuestaModelo>, [Mensaje[], unknown]>;
@@ -46,7 +48,7 @@ describe('AgenteService', () => {
   beforeEach(() => {
     completar = jest.fn();
     sesion = {
-      herramientas: [{ type: 'function', function: { name: 'buscar_repuestos', parameters: { type: 'object' } } }],
+      herramientas: ['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta', PUERTA_DEL_AGENTE].map(herramienta),
       ejecutar: jest.fn().mockResolvedValue('{"items":[{"sku":"BOS-FA-110","precio":25000}]}'),
       cerrar: jest.fn().mockResolvedValue(undefined),
     };
@@ -70,7 +72,8 @@ describe('AgenteService', () => {
       expect(sesion.ejecutar).not.toHaveBeenCalled();
       expect(vistoEn(0)[0].role).toBe('system');
       expect(vistoEn(0)[1]).toEqual({ role: 'user', content: 'hola' });
-      expect(completar.mock.calls[0][1]).toBe(sesion.herramientas);
+      // Todas menos la puerta de entrada del propio agente (se llamaría a sí mismo).
+      expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta']);
     });
 
     it('ejecuta la herramienta pedida y le devuelve el resultado al modelo', async () => {
@@ -202,6 +205,72 @@ describe('AgenteService', () => {
 
       await expect(agente.responder('hola')).rejects.toThrow();
       expect(conversaciones.filas).toEqual([]);
+    });
+  });
+
+  describe('entre agentes (modo agente)', () => {
+    const precio = (codigo: string, precioUnitario: number) =>
+      JSON.stringify({ codigo_repuesto: codigo, precio_unitario: precioUnitario, disponible: true });
+
+    it('solo ve las herramientas de consulta: ni escritura ni su propia puerta de entrada', async () => {
+      completar.mockResolvedValueOnce(textoFinal('ok'));
+
+      await agente.responder('Cotiza 1 PAS-DEL-CER', undefined, 'agente');
+
+      expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto']);
+      expect(vistoEn(0)[0].content).toMatch(/agentes de otros\s+sectores/);
+    });
+
+    it('los datos salen de los resultados de las herramientas, no del texto del modelo', async () => {
+      sesion.ejecutar.mockImplementation(async (l) =>
+        JSON.parse(l.function.arguments).codigo_repuesto === 'PAS-DEL-CER' ? precio('PAS-DEL-CER', 144580) : precio('AMO-DEL-GAS', 242269),
+      );
+      completar
+        .mockResolvedValueOnce(
+          pideHerramientas(
+            pide('a', 'consultar_precio_repuesto', { codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }),
+            pide('b', 'consultar_precio_repuesto', { codigo_repuesto: 'AMO-DEL-GAS', cantidad: 2 }),
+          ),
+        )
+        // Aunque el modelo escriba otro precio, en datos va el de la herramienta.
+        .mockResolvedValueOnce(textoFinal('Pastillas a $1 y amortiguadores a $2'));
+
+      const r = await agente.responder('Cotiza 1 PAS-DEL-CER y 2 AMO-DEL-GAS', undefined, 'agente');
+
+      expect(r.datos).toEqual([
+        { codigo_repuesto: 'PAS-DEL-CER', precio_unitario: 144580, disponible: true },
+        { codigo_repuesto: 'AMO-DEL-GAS', precio_unitario: 242269, disponible: true },
+      ]);
+    });
+
+    it('no adjunta resultados con ERROR ni de otras herramientas; si un código se consultó dos veces, queda el último', async () => {
+      sesion.ejecutar
+        .mockResolvedValueOnce(precio('PAS-DEL-CER', 100))
+        .mockResolvedValueOnce('ERROR: Datos inválidos')
+        .mockResolvedValueOnce('{"items":[]}')
+        .mockResolvedValueOnce(precio('PAS-DEL-CER', 144580));
+      completar
+        .mockResolvedValueOnce(
+          pideHerramientas(
+            pide('a', 'consultar_precio_repuesto', { codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }),
+            pide('b', 'consultar_precio_repuesto', { codigo_repuesto: '', cantidad: 0 }),
+            pide('c', 'buscar_repuestos', { texto: 'pastillas' }),
+          ),
+        )
+        .mockResolvedValueOnce(pideHerramientas(pide('d', 'consultar_precio_repuesto', { codigo_repuesto: 'PAS-DEL-CER', cantidad: 2 })))
+        .mockResolvedValueOnce(textoFinal('listo'));
+
+      const r = await agente.responder('...', undefined, 'agente');
+
+      expect(r.datos).toEqual([{ codigo_repuesto: 'PAS-DEL-CER', precio_unitario: 144580, disponible: true }]);
+    });
+
+    it('con un cliente no se adjuntan datos', async () => {
+      completar.mockResolvedValueOnce(textoFinal('hola'));
+
+      const r = await agente.responder('hola');
+
+      expect(r.datos).toBeUndefined();
     });
   });
 });

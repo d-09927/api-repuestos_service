@@ -18,5 +18,7 @@ import { AgenteController } from './infrastructure/http/agente.controller';
     McpClienteService,
     { provide: ConversacionRepositoryPort, useClass: ConversacionTypeOrmRepository },
   ],
+  // El MCP lo usa en hablar_con_repuestos: los agentes de otros sectores le hablan a este agente.
+  exports: [AgenteService],
 })
 export class AgenteModule {}

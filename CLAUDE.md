@@ -68,7 +68,7 @@ src/mcp/
 ```
 
 - SDK v2: `@modelcontextprotocol/server` y `@modelcontextprotocol/node` (tiene build CommonJS). `inputSchema: z.object({...})`.
-- 14 herramientas de **lectura** siempre (incluye `consultar_precio_repuesto` para facturación); 4 de **escritura** (reservar, liberar, vender, comprar) solo si
+- 15 herramientas de **lectura** siempre (incluye `hablar_con_repuestos`, la puerta de los otros agentes, y `consultar_precio_repuesto`); 4 de **escritura** (reservar, liberar, vender, comprar) solo si
   `MCP_PERMITIR_ESCRITURA=true`. Las de escritura exigen `confirmado: true` y, con `false`, devuelven un resumen.
 - Los errores se devuelven como resultado `isError` con un mensaje legible, no como excepción.
 - `ComprasModule` y `VentasModule` deben exportar su service (`exports: [...]`) para que el MCP los use.
@@ -91,6 +91,10 @@ src/mcp/
 5. **Integración con facturación** (contratos de los otros equipos: ver memoria / `docs/contrato-repuestos.xlsx`).
    Fase 1 hecha: `repuestos.codigoUniversal` (código universal del taller, no único), herramienta MCP
    `consultar_precio_repuesto` (el catálogo guarda precios CON IVA; `precio_unitario` sale SIN IVA, como lo pide facturación), `npm run sembrar:codigos`.
+   **Requisito: todo entre sectores pasa por agentes.** Los otros sectores llaman `hablar_con_repuestos` (MCP) →
+   `AgenteService.responder(texto, id, 'agente')`: prompt `PROMPT_AGENTES`, solo `HERRAMIENTAS_ENTRE_AGENTES` (consulta),
+   y `datos[]` sale de los resultados de `consultar_precio_repuesto`, no del texto del modelo. El agente nunca ve su
+   propia puerta (`PUERTA_DEL_AGENTE`).
    Fase 2 por acordar con facturación: `registrar_pedido` (reserva, venta PENDIENTE_PAGO), `despachar_pedido`,
    `registrar_pago_pedido`, todas con `id_mensaje`.
 6. Más adelante: anulaciones y devoluciones, autenticación y roles, eventos entre servicios

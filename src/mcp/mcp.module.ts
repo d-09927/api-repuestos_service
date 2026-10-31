@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AgenteModule } from "../agente/agente.module";
 import { ClientesModule } from "../clientes/clientes.module";
 import { ComprasModule } from "../compras/compras.module";
 import { MovimientosModule } from "../movimientos/movimientos.module";
@@ -18,6 +19,7 @@ import { McpController } from "./mcp.controller";
         ClientesModule,
         ComprasModule,
         VentasModule,
+        AgenteModule,
     ],
     controllers:[McpController]
 })

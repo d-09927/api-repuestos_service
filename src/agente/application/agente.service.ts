@@ -1,17 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NotFoundError } from '../../common/domain-error';
-import { IaService, Mensaje } from '../../ia/ia.service';
+import { Herramienta, IaService, Mensaje } from '../../ia/ia.service';
 import { MensajeConversacion } from '../domain/entities/mensaje-conversacion.entity';
 import { ConversacionRepositoryPort } from '../domain/ports/conversacion.repository.port';
 import { McpClienteService, SesionMcp } from './mcp-cliente.service';
-import { PROMPT_CLIENTE } from './prompts';
+import { PROMPT_AGENTES, PROMPT_CLIENTE } from './prompts';
 
 /** Máximo de idas y vueltas con el modelo por mensaje; evita bucles infinitos si el modelo se enreda. */
 export const MAX_VUELTAS = 6;
 
 /** Mensajes anteriores que ve el modelo. Más memoria ocupa más contexto (ver num_ctx en ollama/Modelfile). */
 export const LIMITE_HISTORIAL = 30;
+
+/** Quién le habla al agente: una persona (compra directa) o el agente de otro sector (facturación, taller). */
+export type ModoAgente = 'cliente' | 'agente';
+
+/** Herramienta MCP por la que los otros agentes le hablan a este. Nunca se le ofrece al propio agente: se llamaría a sí mismo. */
+export const PUERTA_DEL_AGENTE = 'hablar_con_repuestos';
+
+/** Con otros agentes, por ahora solo consultas: los pedidos entre sectores están por acordar (Fase 2). */
+export const HERRAMIENTAS_ENTRE_AGENTES = [
+  'consultar_precio_repuesto',
+  'disponibilidad_repuestos',
+  'buscar_repuestos',
+  'buscar_repuestos_por_vehiculo',
+  'obtener_repuesto',
+  'consultar_stock',
+];
 
 const SIN_RESPUESTA = 'No tengo una respuesta para eso. ¿Me lo puede decir de otra forma?';
 const SIN_TERMINAR = 'No pude completar la consulta. Intente con una pregunta más concreta.';
@@ -22,6 +38,11 @@ export interface RespuestaAgente {
   respuesta: string;
   /** Herramientas que usó, en orden. Sirve para depurar y para auditar lo que hizo el agente. */
   herramientas: string[];
+  /**
+   * Solo con otros agentes: el resultado de cada consultar_precio_repuesto que hizo el agente, tal como
+   * lo devolvió la herramienta. Los precios nunca salen del texto del modelo, así no se pueden inventar.
+   */
+  datos?: unknown[];
 }
 
 @Injectable()
@@ -35,14 +56,14 @@ export class AgenteService {
   ) {}
 
   /** Sin conversacionId empieza una conversación nueva; con él, continúa la anterior. */
-  async responder(texto: string, conversacionId?: string): Promise<RespuestaAgente> {
+  async responder(texto: string, conversacionId?: string, modo: ModoAgente = 'cliente'): Promise<RespuestaAgente> {
     const id = conversacionId ?? randomUUID();
     const { anteriores, ultimoOrden } = conversacionId
       ? await this.historial(conversacionId)
       : { anteriores: [], ultimoOrden: 0 };
 
     const mensajes: Mensaje[] = [
-      { role: 'system', content: PROMPT_CLIENTE },
+      { role: 'system', content: modo === 'agente' ? PROMPT_AGENTES : PROMPT_CLIENTE },
       ...anteriores.map(aMensajeModelo),
       { role: 'user', content: texto },
     ];
@@ -53,7 +74,8 @@ export class AgenteService {
     const sesion = await this.mcp.abrir();
     let respuesta: string;
     try {
-      respuesta = await this.bucle(mensajes, sesion, usadas);
+      const permitidas = sesion.herramientas.filter((h) => permitida(h, modo));
+      respuesta = await this.bucle(mensajes, permitidas, sesion, usadas);
     } finally {
       await sesion.cerrar();
     }
@@ -64,7 +86,9 @@ export class AgenteService {
     await this.conversaciones.guardar(
       mensajes.slice(inicioNuevos).map((m, i) => aEntidad(m, id, ultimoOrden + 1 + i, ahora)),
     );
-    return { conversacionId: id, respuesta, herramientas: usadas };
+    const resultado: RespuestaAgente = { conversacionId: id, respuesta, herramientas: usadas };
+    if (modo === 'agente') resultado.datos = preciosConsultados(mensajes.slice(inicioNuevos));
+    return resultado;
   }
 
   // Los últimos mensajes, empezando siempre en uno del cliente: si la ventana cortara entre un
@@ -83,9 +107,9 @@ export class AgenteService {
 
   // El bucle del agente: el modelo pide herramientas, se ejecutan en el MCP y se le devuelven
   // los resultados, hasta que responde con texto.
-  private async bucle(mensajes: Mensaje[], sesion: SesionMcp, usadas: string[]): Promise<string> {
+  private async bucle(mensajes: Mensaje[], herramientas: Herramienta[], sesion: SesionMcp, usadas: string[]): Promise<string> {
     for (let vuelta = 1; vuelta <= MAX_VUELTAS; vuelta++) {
-      const r = await this.ia.completar(mensajes, sesion.herramientas);
+      const r = await this.ia.completar(mensajes, herramientas);
       if (r.llamadas.length === 0) return r.texto || SIN_RESPUESTA;
 
       // El pedido del modelo va a la conversación antes de los resultados: cada resultado
@@ -100,6 +124,31 @@ export class AgenteService {
     this.logger.warn(`Sin respuesta después de ${MAX_VUELTAS} vueltas: ${usadas.join(', ')}`);
     return SIN_TERMINAR;
   }
+}
+
+function permitida(h: Herramienta, modo: ModoAgente): boolean {
+  if (h.function.name === PUERTA_DEL_AGENTE) return false;
+  return modo === 'cliente' || HERRAMIENTAS_ENTRE_AGENTES.includes(h.function.name);
+}
+
+/** Los resultados de consultar_precio_repuesto de este turno (uno por código; si se consultó dos veces, el último). */
+function preciosConsultados(nuevos: Mensaje[]): unknown[] {
+  const ids = new Set<string>();
+  for (const m of nuevos) {
+    if (m.role !== 'assistant' || !m.tool_calls) continue;
+    for (const l of m.tool_calls) if (l.function.name === 'consultar_precio_repuesto') ids.add(l.id);
+  }
+  const porCodigo = new Map<string, unknown>();
+  for (const m of nuevos) {
+    if (m.role !== 'tool' || !ids.has(m.tool_call_id) || m.content.startsWith('ERROR')) continue;
+    try {
+      const dato = JSON.parse(m.content) as { codigo_repuesto?: string };
+      porCodigo.set(String(dato.codigo_repuesto), dato);
+    } catch {
+      // Un resultado que no es JSON no es un precio: no se adjunta.
+    }
+  }
+  return [...porCodigo.values()];
 }
 
 /** De la tabla al formato del modelo. */

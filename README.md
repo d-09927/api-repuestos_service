@@ -36,14 +36,23 @@ es la variable `baseUrl` (`http://localhost:3000/api`); si cambias el puerto, ed
 ## MCP para agentes
 
 El módulo `src/mcp/` expone los services como herramientas MCP en `POST /mcp` (Streamable HTTP), con
-cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 14 herramientas de lectura;
+cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 15 herramientas de lectura;
 las 4 de escritura (reservar, liberar, vender, comprar) solo aparecen con `MCP_PERMITIR_ESCRITURA=true` y
 exigen `confirmado: true`.
 
 - Probar a mano: `npx @modelcontextprotocol/inspector` → Streamable HTTP → `http://localhost:3000/mcp`.
 - Prueba automática de punta a punta (API levantada con escritura habilitada): `npm run test:mcp`.
 
-### Para facturación: `consultar_precio_repuesto`
+### Para los otros sectores: `hablar_con_repuestos`
+
+Requisito del proyecto: **la comunicación entre sectores pasa por los agentes**. Los agentes de facturación o del
+taller le escriben al nuestro con `hablar_con_repuestos { mensaje, codigo_orden?, conversacion_id?, id_mensaje? }` y
+nuestro agente decide qué consultar. Responde `{ conversacion_id, respuesta, datos[], herramientas_usadas[] }`:
+`respuesta` es el texto del agente y `datos[]` trae el resultado de cada `consultar_precio_repuesto` que hizo, tal cual
+(los precios nunca salen del texto del modelo). En este modo el agente solo ve herramientas de consulta. Tarda
+10–25 s con el modelo local.
+
+### La herramienta que usa el agente: `consultar_precio_repuesto`
 
 Facturación (otro grupo) cotiza con los **códigos universales** del taller (`PAS-DEL-CER`, `AMO-DEL-GAS`…), no con
 nuestro SKU. Cada repuesto puede tener un `codigoUniversal` (no es único: varias marcas comparten código).
