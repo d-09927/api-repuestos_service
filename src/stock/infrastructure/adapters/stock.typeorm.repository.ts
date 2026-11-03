@@ -73,6 +73,15 @@ export class StockTypeOrmRepository extends StockRepositoryPort {
     return filas.map((f) => this.aDominio(f));
   }
 
+  async listarConDisponible(): Promise<StockItem[]> {
+    const filas = await repoActual(this.base)
+      .createQueryBuilder('s')
+      .where('s.cantidad - s.reservada > 0')
+      .orderBy('s.bodega', 'ASC')
+      .getMany();
+    return filas.map((f) => this.aDominio(f));
+  }
+
   private aDominio(f: StockOrmEntity): StockItem {
     return new StockItem({
       id: f.id,

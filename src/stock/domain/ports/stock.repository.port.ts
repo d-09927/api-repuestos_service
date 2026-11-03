@@ -14,4 +14,6 @@ export abstract class StockRepositoryPort {
   abstract guardar(stock: StockItem): Promise<void>;
   abstract listarPorRepuesto(repuestoId: string): Promise<StockItem[]>;
   abstract listarBajoMinimo(): Promise<StockItem[]>;
+  /** Las filas con algo disponible (físico menos reservado mayor que 0). */
+  abstract listarConDisponible(): Promise<StockItem[]>;
 }

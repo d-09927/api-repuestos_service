@@ -116,6 +116,13 @@ export class RepuestosService {
     await this.repuestos.guardar(repuesto);
   }
 
+  /** Para el catálogo del stock: los activos de esos ids (los que no existan o estén desactivados no vienen). */
+  async activosPorIds(ids: string[]): Promise<Repuesto[]> {
+    const unicos = [...new Set(ids)];
+    if (!unicos.length) return [];
+    return (await this.repuestos.listar({ ids: unicos, pagina: 1, limite: unicos.length })).items;
+  }
+
   /** Para otros módulos (stock, compras, ventas): el repuesto debe existir y estar activo. */
   async verificarActivo(id: string): Promise<Repuesto> {
     const repuesto = await this.obtener(id);

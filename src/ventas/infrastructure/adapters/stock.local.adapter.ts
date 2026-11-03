@@ -13,7 +13,9 @@ export class StockLocalAdapter extends StockServicePort {
     return this.stock.registrarSalidas({ ...m, motivo: 'Venta' });
   }
 
-  revertirDescuento(m: MovimientoDeVenta): Promise<void> {
-    return this.stock.registrarEntradas({ ...m, motivo: 'Reversión: la venta no pudo guardarse' });
+  async revertirDescuento(m: MovimientoDeVenta): Promise<void> {
+    await this.stock.registrarEntradas({ ...m, motivo: 'Reversión: la venta no pudo guardarse' });
+    // Lo que venía de una reserva vuelve a quedar reservado para el pedido.
+    if (m.desdeReserva) await this.stock.reservarVarios({ ...m, motivo: 'Reversión: la venta no pudo guardarse' });
   }
 }

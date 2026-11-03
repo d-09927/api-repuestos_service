@@ -24,9 +24,20 @@ const LECTURA = [
   'consultar_compras',
   'obtener_compra',
   'consultar_precio_repuesto',
+  'catalogo_repuestos',
   'hablar_con_repuestos',
+  'consultar_orden',
 ];
-const ESCRITURA = ['reservar_repuesto', 'liberar_reserva', 'registrar_venta', 'registrar_compra'];
+const ESCRITURA = [
+  'reservar_repuesto',
+  'liberar_reserva',
+  'registrar_venta',
+  'registrar_compra',
+  'apartar_para_orden',
+  'entregar_orden',
+  'cancelar_orden',
+  'registrar_pago_orden',
+];
 
 async function crear<T>(ruta: string, cuerpo: unknown): Promise<T> {
   const res = await fetch(`${BASE}/api/${ruta}`, {
@@ -90,7 +101,7 @@ describe('MCP de repuestos (punta a punta)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('lista las 15 herramientas de lectura y las 4 de escritura', async () => {
+  it('lista las 17 herramientas de lectura y las 8 de escritura', async () => {
     const { tools } = await cliente.listTools();
     const nombres = tools.map((t) => t.name).sort();
     expect(nombres).toEqual([...LECTURA, ...ESCRITURA].sort());
@@ -157,6 +168,78 @@ describe('MCP de repuestos (punta a punta)', () => {
     expect(stock.datos.totalDisponible).toBe(7);
   });
 
+  describe('pedido de una orden (lo que usa nuestro agente con facturación)', () => {
+    const codigo = `PED-${sufijo}`.toUpperCase();
+    const orden = `OT-E2E-${sufijo}`.toUpperCase();
+    let repuestoPedido: string;
+
+    const stockDe = async () => {
+      const r = await fetch(`${BASE}/api/stock/repuestos/${repuestoPedido}`);
+      const s = (await r.json()) as { bodegas: { cantidad: number; reservada: number }[] };
+      return { fisico: s.bodegas[0].cantidad, reservada: s.bodegas[0].reservada };
+    };
+
+    beforeAll(async () => {
+      const r = await crear<{ id: string }>('repuestos', {
+        sku: `PED-${sufijo}`, codigoUniversal: codigo, nombre: 'Amortiguador prueba pedido', marca: 'Monroe', categoria: 'Suspensión', precio: 119000,
+      });
+      repuestoPedido = r.id;
+      await crear('stock/entradas', { repuestoId: r.id, bodega: 'PRINCIPAL', cantidad: 5, referencia: 'E2E' });
+    });
+
+    it('apartar → entregar (venta por cobrar de lo usado, libera el sobrante) → pagar', async () => {
+      const apartado = await llamar(cliente, 'apartar_para_orden', {
+        codigo_orden: orden, lineas: [{ codigo_repuesto: codigo, cantidad: 3 }], id_mensaje: `${orden}-apartar`,
+      });
+      expect(apartado.isError).toBe(false);
+      expect(apartado.datos).toMatchObject({ codigo_orden: orden, estado: 'APARTADO', lineas: [{ cantidad_apartada: 3, precio_unitario: 100000 }] });
+      expect(await stockDe()).toEqual({ fisico: 5, reservada: 3 });
+
+      // Reintento con el mismo id_mensaje: no aparta otra vez.
+      await llamar(cliente, 'apartar_para_orden', {
+        codigo_orden: orden, lineas: [{ codigo_repuesto: codigo, cantidad: 3 }], id_mensaje: `${orden}-apartar`,
+      });
+      expect(await stockDe()).toEqual({ fisico: 5, reservada: 3 });
+
+      const entregado = await llamar(cliente, 'entregar_orden', {
+        codigo_orden: orden, usadas: [{ codigo_repuesto: codigo, cantidad: 2 }], id_mensaje: `${orden}-entregar`,
+      });
+      expect(entregado.datos).toMatchObject({
+        estado: 'ENTREGADO',
+        lineas: [{ cantidad_entregada: 2 }],
+        total_a_cobrar_con_iva: 238000,
+        total_a_cobrar_sin_iva: 200000,
+      });
+      expect(entregado.datos.ventas[0].numero).toMatch(/^V-\d{6}$/);
+      // Salieron 2 de lo reservado y la que sobró volvió a disponible.
+      expect(await stockDe()).toEqual({ fisico: 3, reservada: 0 });
+
+      const pagado = await llamar(cliente, 'registrar_pago_orden', {
+        codigo_orden: orden, referencia_pago: 'PSE-E2E', id_mensaje: `${orden}-pago`,
+      });
+      expect(pagado.datos).toMatchObject({ estado: 'PAGADO', referencia_pago: 'PSE-E2E' });
+
+      const ventas = (await (await fetch(`${BASE}/api/ventas?limite=100`)).json()) as { items: { numero: string; estado: string; referenciaPago: string }[] };
+      expect(ventas.items.find((v) => v.numero === entregado.datos.ventas[0].numero)).toMatchObject({ estado: 'PAGADA', referenciaPago: 'PSE-E2E' });
+    });
+
+    it('cancelar libera todo; no se puede apartar más de lo que hay en una bodega', async () => {
+      const otra = `${orden}-C`;
+      await llamar(cliente, 'apartar_para_orden', { codigo_orden: otra, lineas: [{ codigo_repuesto: codigo, cantidad: 2 }], id_mensaje: `${otra}-a` });
+      expect((await stockDe()).reservada).toBe(2);
+
+      const cancelado = await llamar(cliente, 'cancelar_orden', { codigo_orden: otra, id_mensaje: `${otra}-c` });
+      expect(cancelado.datos.estado).toBe('CANCELADO');
+      expect((await stockDe()).reservada).toBe(0);
+
+      const demasiado = await llamar(cliente, 'apartar_para_orden', {
+        codigo_orden: `${orden}-X`, lineas: [{ codigo_repuesto: codigo, cantidad: 99 }], id_mensaje: `${orden}-x`,
+      });
+      expect(demasiado.isError).toBe(true);
+      expect(demasiado.texto).toMatch(/en una misma bodega/);
+    });
+  });
+
   describe('consultar_precio_repuesto (para facturación)', () => {
     const codigo = `TST-${sufijo}`.toUpperCase();
 
@@ -204,6 +287,24 @@ describe('MCP de repuestos (punta a punta)', () => {
 
       expect(r.isError).toBe(false);
       expect(r.datos).toMatchObject({ disponible: false, precio_unitario: null, mensaje: expect.stringMatching(/no maneja/) });
+    });
+
+    it('catalogo_repuestos lista el código una sola vez, solo con la marca que tiene unidades', async () => {
+      const r = await llamar(cliente, 'catalogo_repuestos', { categoria: 'frenos' });
+
+      expect(r.isError).toBe(false);
+      expect(r.datos.precio_incluye_iva).toBe(false);
+      const nuestros = r.datos.repuestos.filter((i: { codigo_repuesto: string }) => i.codigo_repuesto === codigo);
+      expect(nuestros).toEqual([
+        {
+          codigo_repuesto: codigo,
+          nombre: 'Pastillas prueba con stock',
+          categoria: 'Frenos',
+          marcas: ['Bosch'],
+          unidades_disponibles: 5,
+          precio_desde: 100000,
+        },
+      ]);
     });
   });
 

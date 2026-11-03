@@ -139,4 +139,35 @@ describe('VentasService', () => {
   it('responde 404 si la venta no existe', async () => {
     await expect(service.obtener('no-existe')).rejects.toThrow('No existe la venta');
   });
+
+  describe('estado de pago', () => {
+    it('una venta de mostrador queda pagada en el momento', async () => {
+      const { venta } = await service.registrar(comando);
+      expect(venta.estado).toBe('PAGADA');
+      expect(venta.pagadaEn).toEqual(venta.fecha);
+      expect(stock.descuentos[0].desdeReserva).toBeUndefined();
+    });
+
+    it('la de un pedido queda por cobrar y saca las unidades de lo reservado', async () => {
+      const { venta } = await service.registrar(comando, { pendienteDePago: true, desdeReserva: true });
+      expect(venta.estado).toBe('PENDIENTE_PAGO');
+      expect(venta.pagadaEn).toBeNull();
+      expect(stock.descuentos[0].desdeReserva).toBe(true);
+    });
+
+    it('marcarPagada guarda la referencia; una venta ya pagada no se vuelve a pagar', async () => {
+      const { venta } = await service.registrar(comando, { pendienteDePago: true });
+
+      const pagada = await service.marcarPagada(venta.id, ' PSE-123 ');
+      expect(pagada).toMatchObject({ estado: 'PAGADA', referenciaPago: 'PSE-123' });
+      expect(pagada.pagadaEn).toBeInstanceOf(Date);
+
+      await expect(service.marcarPagada(venta.id, 'PSE-124')).rejects.toThrow('ya está pagada');
+    });
+
+    it('exige la referencia del pago', async () => {
+      const { venta } = await service.registrar(comando, { pendienteDePago: true });
+      await expect(service.marcarPagada(venta.id, '  ')).rejects.toThrow('referencia del pago');
+    });
+  });
 });

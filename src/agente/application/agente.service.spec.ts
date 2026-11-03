@@ -48,7 +48,7 @@ describe('AgenteService', () => {
   beforeEach(() => {
     completar = jest.fn();
     sesion = {
-      herramientas: ['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta', PUERTA_DEL_AGENTE].map(herramienta),
+      herramientas: ['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta', 'apartar_para_orden', 'consultar_orden', PUERTA_DEL_AGENTE].map(herramienta),
       ejecutar: jest.fn().mockResolvedValue('{"items":[{"sku":"BOS-FA-110","precio":25000}]}'),
       cerrar: jest.fn().mockResolvedValue(undefined),
     };
@@ -72,7 +72,7 @@ describe('AgenteService', () => {
       expect(sesion.ejecutar).not.toHaveBeenCalled();
       expect(vistoEn(0)[0].role).toBe('system');
       expect(vistoEn(0)[1]).toEqual({ role: 'user', content: 'hola' });
-      // Todas menos la puerta de entrada del propio agente (se llamaría a sí mismo).
+      // Todas menos la puerta del propio agente (se llamaría a sí mismo) y las de pedidos de otros sectores.
       expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta']);
     });
 
@@ -212,12 +212,12 @@ describe('AgenteService', () => {
     const precio = (codigo: string, precioUnitario: number) =>
       JSON.stringify({ codigo_repuesto: codigo, precio_unitario: precioUnitario, disponible: true });
 
-    it('solo ve las herramientas de consulta: ni escritura ni su propia puerta de entrada', async () => {
+    it('ve consultas y pedidos, pero no ventas de mostrador ni su propia puerta de entrada', async () => {
       completar.mockResolvedValueOnce(textoFinal('ok'));
 
       await agente.responder('Cotiza 1 PAS-DEL-CER', undefined, 'agente');
 
-      expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto']);
+      expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto', 'apartar_para_orden', 'consultar_orden']);
       expect(vistoEn(0)[0].content).toMatch(/agentes de otros\s+sectores/);
     });
 
@@ -263,6 +263,58 @@ describe('AgenteService', () => {
       const r = await agente.responder('...', undefined, 'agente');
 
       expect(r.datos).toEqual([{ codigo_repuesto: 'PAS-DEL-CER', precio_unitario: 144580, disponible: true }]);
+    });
+
+    it('el catálogo se adjunta tal como lo devolvió la herramienta', async () => {
+      const catalogo = { total: 1, repuestos: [{ codigo_repuesto: 'PAS-DEL-CER', unidades_disponibles: 8, precio_desde: 144580 }] };
+      sesion.ejecutar.mockResolvedValueOnce(JSON.stringify(catalogo));
+      completar
+        .mockResolvedValueOnce(pideHerramientas(pide('a', 'catalogo_repuestos', { categoria: 'Frenos' })))
+        .mockResolvedValueOnce(textoFinal('Tenemos pastillas'));
+
+      const r = await agente.responder('¿Qué repuestos de frenos tienen?', undefined, 'agente');
+
+      expect(r.catalogo).toEqual(catalogo);
+      expect(r.datos).toEqual([]);
+      expect(r.pedido).toBeUndefined();
+    });
+
+    it('la orden y el id_mensaje de las acciones de pedido los pone el código, no el modelo', async () => {
+      sesion.ejecutar.mockResolvedValue(JSON.stringify({ codigo_orden: 'OT-0054', estado: 'APARTADO' }));
+      completar
+        .mockResolvedValueOnce(
+          pideHerramientas(
+            // El modelo se equivoca de orden e inventa un id_mensaje.
+            pide('a', 'apartar_para_orden', { codigo_orden: 'OT-9999', lineas: [{ codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }], id_mensaje: 'inventado' }),
+            pide('b', 'consultar_orden', { codigo_orden: 'OT-9999' }),
+          ),
+        )
+        .mockResolvedValueOnce(textoFinal('Apartado'));
+
+      const r = await agente.responder('Aparta 1 PAS-DEL-CER', undefined, 'agente', { codigoOrden: 'OT-0054', idMensaje: 'fac-123' });
+
+      const [apartar, consultar] = sesion.ejecutar.mock.calls.map(([l]) => JSON.parse(l.function.arguments));
+      expect(apartar).toEqual({ codigo_orden: 'OT-0054', lineas: [{ codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }], id_mensaje: 'fac-123:apartar_para_orden' });
+      expect(consultar).toEqual({ codigo_orden: 'OT-0054' });
+      // En la conversación queda lo que de verdad se ejecutó.
+      expect(JSON.parse((vistoEn(1)[2] as { tool_calls: LlamadaHerramienta[] }).tool_calls[0].function.arguments).codigo_orden).toBe('OT-0054');
+      expect(r.pedido).toEqual({ codigo_orden: 'OT-0054', estado: 'APARTADO' });
+    });
+
+    it('sin id_mensaje del otro sector, cada respuesta usa uno nuevo (no se confunde con otra intención)', async () => {
+      sesion.ejecutar.mockResolvedValue('{}');
+      completar
+        .mockResolvedValueOnce(pideHerramientas(pide('a', 'apartar_para_orden', { lineas: [] })))
+        .mockResolvedValueOnce(textoFinal('ok'))
+        .mockResolvedValueOnce(pideHerramientas(pide('a', 'apartar_para_orden', { lineas: [] })))
+        .mockResolvedValueOnce(textoFinal('ok'));
+
+      await agente.responder('Aparta', undefined, 'agente', { codigoOrden: 'OT-1' });
+      await agente.responder('Aparta', undefined, 'agente', { codigoOrden: 'OT-1' });
+
+      const ids = sesion.ejecutar.mock.calls.map(([l]) => JSON.parse(l.function.arguments).id_mensaje);
+      expect(ids[0]).toMatch(/:apartar_para_orden$/);
+      expect(ids[0]).not.toBe(ids[1]);
     });
 
     it('con un cliente no se adjuntan datos', async () => {

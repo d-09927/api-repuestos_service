@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { PaginaResultado } from '../../../common/paginacion';
 import { repoActual } from '../../../common/unidad-de-trabajo/transaccion-actual';
 import { Venta } from '../../domain/entities/venta.entity';
+import { EstadoVenta } from '../../domain/enums/estado-venta.enum';
 import { FiltrosVenta, VentaRepositoryPort } from '../../domain/ports/venta.repository.port';
 import { VentaOrmEntity } from '../entities/venta.orm-entity';
 
@@ -63,6 +64,9 @@ export class VentaTypeOrmRepository extends VentaRepositoryPort implements OnMod
       bodega: v.bodega,
       observaciones: v.observaciones,
       total: v.total,
+      estado: v.estado,
+      referenciaPago: v.referenciaPago,
+      pagadaEn: v.pagadaEn,
       fecha: v.fecha,
       creadoEn: v.creadoEn,
     });
@@ -76,6 +80,9 @@ export class VentaTypeOrmRepository extends VentaRepositoryPort implements OnMod
       bodega: f.bodega,
       observaciones: f.observaciones,
       total: f.total,
+      estado: f.estado as EstadoVenta,
+      referenciaPago: f.referenciaPago,
+      pagadaEn: f.pagadaEn,
       fecha: f.fecha,
       creadoEn: f.creadoEn,
     });

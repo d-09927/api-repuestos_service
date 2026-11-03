@@ -2,7 +2,7 @@ import { UnidadDeTrabajoPort } from '../../common/unidad-de-trabajo/unidad-de-tr
 import { StockItem } from '../domain/entities/stock-item.entity';
 import { StockInsuficienteError } from '../domain/errors/stock-insuficiente.error';
 import { MovimientoServicePort, RegistroMovimiento } from '../domain/ports/movimiento.service.port';
-import { RepuestoServicePort } from '../domain/ports/repuesto.service.port';
+import { RepuestoDelCatalogo, RepuestoServicePort } from '../domain/ports/repuesto.service.port';
 import { StockRepositoryPort } from '../domain/ports/stock.repository.port';
 import { StockService } from './stock.service';
 
@@ -29,6 +29,9 @@ class StockEnMemoria extends StockRepositoryPort {
   async listarBajoMinimo() {
     return [...this.filas.values()].filter((s) => s.cantidad - s.reservada <= s.minimo);
   }
+  async listarConDisponible() {
+    return [...this.filas.values()].filter((s) => s.cantidad - s.reservada > 0);
+  }
 }
 
 class MovimientosFalsos extends MovimientoServicePort {
@@ -39,7 +42,12 @@ class MovimientosFalsos extends MovimientoServicePort {
 }
 
 class RepuestosFalsos extends RepuestoServicePort {
+  /** Los activos que conoce el catálogo; los demás ids se toman como inexistentes o desactivados. */
+  activos: RepuestoDelCatalogo[] = [];
   async verificarRepuestoActivo() {}
+  async activosPorIds(ids: string[]) {
+    return this.activos.filter((r) => ids.includes(r.id));
+  }
 }
 
 class SinTransaccion extends UnidadDeTrabajoPort {
@@ -52,11 +60,13 @@ describe('StockService', () => {
   let service: StockService;
   let stocks: StockEnMemoria;
   let movimientos: MovimientosFalsos;
+  let repuestos: RepuestosFalsos;
 
   beforeEach(() => {
     stocks = new StockEnMemoria();
     movimientos = new MovimientosFalsos();
-    service = new StockService(stocks, movimientos, new RepuestosFalsos(), new SinTransaccion());
+    repuestos = new RepuestosFalsos();
+    service = new StockService(stocks, movimientos, repuestos, new SinTransaccion());
   });
 
   const entrada = (cantidad: number, extra = {}) =>
@@ -165,5 +175,130 @@ describe('StockService', () => {
     // la regla falló antes de guardar nada
     expect((await stocks.bloquear(REPUESTO, 'PRINCIPAL'))!.cantidad).toBe(5);
     expect(movimientos.registrados.length).toBe(antes);
+  });
+
+  describe('lotes de un pedido (reservar, entregar desde la reserva, liberar)', () => {
+    const B = '22222222-2222-2222-2222-222222222222';
+    const lote = (lineas: { repuestoId: string; cantidad: number }[], extra = {}) => ({
+      bodega: 'principal',
+      referencia: 'OT-0054',
+      motivo: 'Pedido',
+      lineas,
+      ...extra,
+    });
+    const item = async (id: string) => (await stocks.bloquear(id, 'PRINCIPAL'))!;
+
+    beforeEach(async () => {
+      await entrada(5);
+      await service.registrarEntrada({ repuestoId: B, bodega: 'PRINCIPAL', cantidad: 3 });
+    });
+
+    it('reserva varias líneas y deja el movimiento con la referencia de la orden', async () => {
+      await service.reservarVarios(lote([{ repuestoId: REPUESTO, cantidad: 2 }, { repuestoId: B, cantidad: 3 }]));
+
+      expect((await item(REPUESTO)).reservada).toBe(2);
+      expect((await item(B)).reservada).toBe(3);
+      expect(movimientos.registrados.at(-1)).toMatchObject({ tipo: 'RESERVA', referencia: 'OT-0054' });
+    });
+
+    it('reservar es todo o nada', async () => {
+      await expect(
+        service.reservarVarios(lote([{ repuestoId: REPUESTO, cantidad: 2 }, { repuestoId: B, cantidad: 4 }])),
+      ).rejects.toThrow(StockInsuficienteError);
+      expect((await item(REPUESTO)).reservada).toBe(0);
+    });
+
+    it('una salida desde la reserva baja lo físico y lo reservado, no lo disponible de otros', async () => {
+      await service.reservarVarios(lote([{ repuestoId: REPUESTO, cantidad: 2 }]));
+
+      await service.registrarSalidas(lote([{ repuestoId: REPUESTO, cantidad: 2 }], { desdeReserva: true }));
+
+      expect(await item(REPUESTO)).toMatchObject({ cantidad: 3, reservada: 0 });
+    });
+
+    it('no se entrega desde la reserva más de lo reservado', async () => {
+      await service.reservarVarios(lote([{ repuestoId: REPUESTO, cantidad: 1 }]));
+
+      await expect(
+        service.registrarSalidas(lote([{ repuestoId: REPUESTO, cantidad: 2 }], { desdeReserva: true })),
+      ).rejects.toThrow('reservada');
+    });
+
+    it('liberar varias líneas devuelve lo reservado a disponible', async () => {
+      await service.reservarVarios(lote([{ repuestoId: REPUESTO, cantidad: 2 }, { repuestoId: B, cantidad: 1 }]));
+
+      await service.liberarVarios(lote([{ repuestoId: REPUESTO, cantidad: 2 }, { repuestoId: B, cantidad: 1 }]));
+
+      expect((await item(REPUESTO)).reservada).toBe(0);
+      expect((await item(B)).reservada).toBe(0);
+    });
+  });
+
+  describe('catálogo', () => {
+    const repuesto = (id: string, codigoUniversal: string | null, marca: string, precio: number, categoria = 'Frenos') => ({
+      id,
+      codigoUniversal,
+      nombre: `Juego de pastillas delanteras ${marca}`,
+      marca,
+      categoria,
+      precio,
+    });
+    const BOSCH = '00000000-0000-0000-0000-00000000000b';
+    const BREMBO = '00000000-0000-0000-0000-0000000000b2';
+    const FILTRO = '00000000-0000-0000-0000-0000000000f1';
+
+    beforeEach(async () => {
+      repuestos.activos = [
+        repuesto(BOSCH, 'PAS-DEL-CER', 'Bosch', 172050),
+        repuesto(BREMBO, 'PAS-DEL-CER', 'Brembo', 189000),
+        { ...repuesto(FILTRO, 'FIL-ACE', 'Mann', 30000, 'Filtros'), nombre: 'Filtro de aceite Mann' },
+      ];
+      await service.registrarEntrada({ repuestoId: BOSCH, bodega: 'PRINCIPAL', cantidad: 8 });
+      await service.registrarEntrada({ repuestoId: BREMBO, bodega: 'PRINCIPAL', cantidad: 3 });
+      await service.registrarEntrada({ repuestoId: BREMBO, bodega: 'NORTE', cantidad: 2 });
+      await service.registrarEntrada({ repuestoId: FILTRO, bodega: 'NORTE', cantidad: 5 });
+    });
+
+    it('lista cada código universal una sola vez, sumando marcas y bodegas y con el precio de la más barata', async () => {
+      await service.reservar({ repuestoId: BOSCH, bodega: 'PRINCIPAL', cantidad: 2 });
+
+      expect(await service.catalogo()).toEqual([
+        {
+          codigoUniversal: 'FIL-ACE',
+          nombre: 'Filtro de aceite',
+          categoria: 'Filtros',
+          marcas: ['Mann'],
+          unidadesDisponibles: 5,
+          precioDesde: 30000,
+          bodegas: ['NORTE'],
+        },
+        {
+          codigoUniversal: 'PAS-DEL-CER',
+          nombre: 'Juego de pastillas delanteras',
+          categoria: 'Frenos',
+          marcas: ['Bosch', 'Brembo'],
+          // 6 de Bosch (8 menos 2 reservadas) + 5 de Brembo
+          unidadesDisponibles: 11,
+          precioDesde: 172050,
+          bodegas: ['NORTE', 'PRINCIPAL'],
+        },
+      ]);
+    });
+
+    it('no incluye lo agotado o reservado, lo desactivado ni lo que no tiene código universal', async () => {
+      await service.reservar({ repuestoId: BOSCH, bodega: 'PRINCIPAL', cantidad: 8 });
+      await service.registrarEntrada({ repuestoId: REPUESTO, bodega: 'PRINCIPAL', cantidad: 4 }); // desactivado
+      repuestos.activos.push(repuesto('00000000-0000-0000-0000-0000000000c0', null, 'Genérica', 1000));
+      await service.registrarEntrada({ repuestoId: '00000000-0000-0000-0000-0000000000c0', bodega: 'PRINCIPAL', cantidad: 4 });
+
+      const catalogo = await service.catalogo();
+
+      expect(catalogo.map((i) => i.codigoUniversal)).toEqual(['FIL-ACE', 'PAS-DEL-CER']);
+      expect(catalogo[1]).toMatchObject({ marcas: ['Brembo'], unidadesDisponibles: 5, precioDesde: 189000 });
+    });
+
+    it('filtra por categoría sin importar mayúsculas', async () => {
+      expect((await service.catalogo(' frenos ')).map((i) => i.codigoUniversal)).toEqual(['PAS-DEL-CER']);
+    });
   });
 });

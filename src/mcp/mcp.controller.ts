@@ -2,6 +2,7 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 import { All, Controller, Req, Res } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AgenteService } from "../agente/application/agente.service";
+import { PedidosService } from "../pedidos/application/pedidos.service";
 import { ClientesService } from "../clientes/application/clientes.service";
 import { ComprasService } from "../compras/application/compras.service";
 import { MovimientosService } from "../movimientos/application/movimientos.service";
@@ -41,6 +42,7 @@ export class McpController{
         movimientos:MovimientosService,
         proveedores: ProveedoresService,
         agente: AgenteService,
+        pedidos: PedidosService,
 
         private readonly config: ConfigService,
     ){
@@ -48,7 +50,7 @@ export class McpController{
         const manejador = createMcpHandler(()=>
             crearServidorMcp(
                 {
-                    repuestos,stock,ventas,clientes,compras,movimientos,proveedores,agente
+                    repuestos,stock,ventas,clientes,compras,movimientos,proveedores,agente,pedidos
                 },
                 {
                     permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true',

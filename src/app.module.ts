@@ -8,6 +8,7 @@ import { CompraDetallesModule } from './compra-detalles/compra-detalles.module';
 import { ComprasModule } from './compras/compras.module';
 import { McpModule } from './mcp/mcp.module';
 import { MovimientosModule } from './movimientos/movimientos.module';
+import { PedidosModule } from './pedidos/pedidos.module';
 import { ProveedoresModule } from './proveedores/proveedores.module';
 import { RepuestosModule } from './repuestos/repuestos.module';
 import { StockModule } from './stock/stock.module';
@@ -43,6 +44,8 @@ import { AgenteModule } from './agente/agente.module';
     CompraDetallesModule,
     VentasModule,
     VentaDetallesModule,
+    // Pedidos de las órdenes de taller (los piden otros sectores a nuestro agente).
+    PedidosModule,
     // Puerta de entrada para agentes (llama a los services de arriba).
     McpModule,
     AgenteModule

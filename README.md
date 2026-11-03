@@ -36,7 +36,7 @@ es la variable `baseUrl` (`http://localhost:3000/api`); si cambias el puerto, ed
 ## MCP para agentes
 
 El módulo `src/mcp/` expone los services como herramientas MCP en `POST /mcp` (Streamable HTTP), con
-cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 15 herramientas de lectura;
+cabecera `Authorization: Bearer <MCP_TOKEN>`. Sin `MCP_TOKEN` responde 503. Hay 17 herramientas de lectura;
 las 4 de escritura (reservar, liberar, vender, comprar) solo aparecen con `MCP_PERMITIR_ESCRITURA=true` y
 exigen `confirmado: true`.
 
@@ -47,10 +47,31 @@ exigen `confirmado: true`.
 
 Requisito del proyecto: **la comunicación entre sectores pasa por los agentes**. Los agentes de facturación o del
 taller le escriben al nuestro con `hablar_con_repuestos { mensaje, codigo_orden?, conversacion_id?, id_mensaje? }` y
-nuestro agente decide qué consultar. Responde `{ conversacion_id, respuesta, datos[], herramientas_usadas[] }`:
+nuestro agente decide qué consultar. Responde `{ conversacion_id, respuesta, datos[], catalogo, pedido, herramientas_usadas[] }`:
 `respuesta` es el texto del agente y `datos[]` trae el resultado de cada `consultar_precio_repuesto` que hizo, tal cual
-(los precios nunca salen del texto del modelo). En este modo el agente solo ve herramientas de consulta. Tarda
-10–25 s con el modelo local.
+(los precios nunca salen del texto del modelo). Tarda 10–25 s con el modelo local.
+
+Por el mismo mensaje el agente maneja el **pedido de una orden de taller** (módulo `pedidos`, `GET /api/pedidos`):
+
+| Mensaje del otro sector | Herramienta que usa el agente | Estado |
+|---|---|---|
+| "El cliente aceptó: aparta 2 AMO-DEL-GAS" | `apartar_para_orden` (reserva; marca más barata que alcance en una bodega) | APARTADO |
+| "Terminamos: se usaron 2 AMO-DEL-GAS" | `entregar_orden` (venta **por cobrar** a facturación de lo usado; libera el sobrante) | ENTREGADO |
+| "Pagamos, referencia PSE-123" | `registrar_pago_orden` (las ventas pasan a PAGADA) | PAGADO |
+| "Cancela el pedido" | `cancelar_orden` (libera todo) | CANCELADO |
+
+`codigo_orden` e `id_mensaje` los pone el código desde el mensaje (no el modelo): un reintento con el mismo
+`id_mensaje` no repite la acción. El comprador es facturación (`FACTURACION_NIT`, `FACTURACION_NOMBRE`). En modo
+cliente el agente no ve estas herramientas. Las ventas tienen `estado`: PAGADA (mostrador) o PENDIENTE_PAGO.
+
+### Catálogo para el taller: `catalogo_repuestos` y `GET /api/stock/catalogo`
+
+Lo que hay en las bodegas, **una vez por código universal** (sin repetir marcas ni bodegas), para que el taller sepa qué
+puede pedir. Solo sale lo que tiene unidades disponibles (físico menos reservado), está activo y tiene código universal.
+Filtro opcional `categoria`. REST: `{ codigoUniversal, nombre (sin marca), categoria, marcas[], unidadesDisponibles,
+precioDesde (CON IVA, el del catálogo), bodegas[] }`. MCP: `{ codigo_repuesto, nombre, categoria, marcas,
+unidades_disponibles, precio_desde (SIN IVA) }`. El taller lo pide por mensaje ("¿Qué repuestos de frenos tienen?") y
+`hablar_con_repuestos` lo devuelve en `catalogo`, tal como salió de la herramienta.
 
 ### La herramienta que usa el agente: `consultar_precio_repuesto`
 

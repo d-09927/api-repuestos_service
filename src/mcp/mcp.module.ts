@@ -7,6 +7,7 @@ import { ProveedoresModule } from "../proveedores/proveedores.module";
 import { RepuestosModule } from "../repuestos/repuestos.module";
 import { StockModule } from "../stock/stock.module";
 import { VentasModule } from "../ventas/ventas.module";
+import { PedidosModule } from "../pedidos/pedidos.module";
 import { McpController } from "./mcp.controller";
 
 // Importa los módulos (no los services) cuyos services usan las herramientas.
@@ -20,6 +21,7 @@ import { McpController } from "./mcp.controller";
         ComprasModule,
         VentasModule,
         AgenteModule,
+        PedidosModule,
     ],
     controllers:[McpController]
 })

@@ -25,8 +25,9 @@ npm run build
 
 ## Arquitectura (no romper estas reglas)
 
-Un **módulo por tabla**, sin mezclar lógica ni tablas. Los diez módulos: `repuestos`, `compatibilidades`,
-`stock`, `movimientos`, `proveedores`, `clientes`, `compras`, `compra-detalles`, `ventas`, `venta-detalles`.
+Un **módulo por tabla**, sin mezclar lógica ni tablas. Los once módulos: `repuestos`, `compatibilidades`,
+`stock`, `movimientos`, `proveedores`, `clientes`, `compras`, `compra-detalles`, `ventas`, `venta-detalles`, `pedidos`
+(sus líneas van en jsonb dentro de `pedidos`). Además `ia/` y `agente/` (con su tabla `agente_mensajes`).
 
 ```
 src/<modulo>/
@@ -68,8 +69,9 @@ src/mcp/
 ```
 
 - SDK v2: `@modelcontextprotocol/server` y `@modelcontextprotocol/node` (tiene build CommonJS). `inputSchema: z.object({...})`.
-- 15 herramientas de **lectura** siempre (incluye `hablar_con_repuestos`, la puerta de los otros agentes, y `consultar_precio_repuesto`); 4 de **escritura** (reservar, liberar, vender, comprar) solo si
-  `MCP_PERMITIR_ESCRITURA=true`. Las de escritura exigen `confirmado: true` y, con `false`, devuelven un resumen.
+- 17 herramientas de **lectura** siempre (incluye `hablar_con_repuestos`, la puerta de los otros agentes, `consultar_precio_repuesto`, `catalogo_repuestos` y `consultar_orden`); 8 de **escritura** solo si `MCP_PERMITIR_ESCRITURA=true`: reservar, liberar,
+  vender y comprar exigen `confirmado: true` (con `false` devuelven un resumen); las 4 de pedidos (apartar, entregar,
+  cancelar, pagar) no, porque la confirmación viene de facturación, pero exigen `id_mensaje`.
 - Los errores se devuelven como resultado `isError` con un mensaje legible, no como excepción.
 - `ComprasModule` y `VentasModule` deben exportar su service (`exports: [...]`) para que el MCP los use.
 - Variables: `MCP_TOKEN` (sin él, `/mcp` responde 503) y `MCP_PERMITIR_ESCRITURA`.
@@ -95,8 +97,10 @@ src/mcp/
    `AgenteService.responder(texto, id, 'agente')`: prompt `PROMPT_AGENTES`, solo `HERRAMIENTAS_ENTRE_AGENTES` (consulta),
    y `datos[]` sale de los resultados de `consultar_precio_repuesto`, no del texto del modelo. El agente nunca ve su
    propia puerta (`PUERTA_DEL_AGENTE`).
-   Fase 2 por acordar con facturación: `registrar_pedido` (reserva, venta PENDIENTE_PAGO), `despachar_pedido`,
-   `registrar_pago_pedido`, todas con `id_mensaje`.
+   Fase 2 hecha: módulo `pedidos` (APARTADO → ENTREGADO → PAGADO / CANCELADO), herramientas `apartar_para_orden`,
+   `entregar_orden`, `cancelar_orden`, `registrar_pago_orden`, `consultar_orden`; `ventas.estado` (PAGADA / PENDIENTE_PAGO)
+   y `marcarPagada`; comprador = facturación (`FACTURACION_NIT`). En modo agente el código fija `codigo_orden` e
+   `id_mensaje` (`<id del mensaje>:<herramienta>`). Pendiente: que facturación deje el REST directo y cerrarlo (auth).
 6. Más adelante: anulaciones y devoluciones, autenticación y roles, eventos entre servicios
    (`stock.bajo`, `venta.confirmada`) y agentes de los otros sectores coordinados por un agente superior.
 

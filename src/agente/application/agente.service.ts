@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NotFoundError } from '../../common/domain-error';
-import { Herramienta, IaService, Mensaje } from '../../ia/ia.service';
+import { Herramienta, IaService, LlamadaHerramienta, Mensaje } from '../../ia/ia.service';
 import { MensajeConversacion } from '../domain/entities/mensaje-conversacion.entity';
 import { ConversacionRepositoryPort } from '../domain/ports/conversacion.repository.port';
 import { McpClienteService, SesionMcp } from './mcp-cliente.service';
@@ -19,15 +19,34 @@ export type ModoAgente = 'cliente' | 'agente';
 /** Herramienta MCP por la que los otros agentes le hablan a este. Nunca se le ofrece al propio agente: se llamaría a sí mismo. */
 export const PUERTA_DEL_AGENTE = 'hablar_con_repuestos';
 
-/** Con otros agentes, por ahora solo consultas: los pedidos entre sectores están por acordar (Fase 2). */
+/** El pedido de una orden de taller: solo lo maneja el agente cuando le habla otro sector, nunca con un cliente. */
+export const HERRAMIENTAS_DE_PEDIDOS = [
+  'consultar_orden',
+  'apartar_para_orden',
+  'entregar_orden',
+  'cancelar_orden',
+  'registrar_pago_orden',
+];
+
+/** Con otros agentes: consultas y el pedido de la orden. Nada de ventas de mostrador ni compras a proveedores. */
 export const HERRAMIENTAS_ENTRE_AGENTES = [
+  'catalogo_repuestos',
   'consultar_precio_repuesto',
   'disponibilidad_repuestos',
   'buscar_repuestos',
   'buscar_repuestos_por_vehiculo',
   'obtener_repuesto',
   'consultar_stock',
+  ...HERRAMIENTAS_DE_PEDIDOS,
 ];
+
+/** Lo que trae el mensaje del otro sector y el código impone en las herramientas de pedidos (no el modelo). */
+export interface ContextoAgente {
+  /** Orden de taller del mensaje: el agente no puede actuar sobre otra. */
+  codigoOrden?: string;
+  /** id_mensaje del otro sector: de él sale el de cada acción, así un reintento no repite nada. */
+  idMensaje?: string;
+}
 
 const SIN_RESPUESTA = 'No tengo una respuesta para eso. ¿Me lo puede decir de otra forma?';
 const SIN_TERMINAR = 'No pude completar la consulta. Intente con una pregunta más concreta.';
@@ -43,6 +62,10 @@ export interface RespuestaAgente {
    * lo devolvió la herramienta. Los precios nunca salen del texto del modelo, así no se pueden inventar.
    */
   datos?: unknown[];
+  /** Solo con otros agentes: el último catalogo_repuestos que consultó el agente, tal como lo devolvió la herramienta. */
+  catalogo?: unknown;
+  /** Solo con otros agentes: el pedido de la orden tal como quedó tras la última acción (de la herramienta, no del modelo). */
+  pedido?: unknown;
 }
 
 @Injectable()
@@ -56,7 +79,12 @@ export class AgenteService {
   ) {}
 
   /** Sin conversacionId empieza una conversación nueva; con él, continúa la anterior. */
-  async responder(texto: string, conversacionId?: string, modo: ModoAgente = 'cliente'): Promise<RespuestaAgente> {
+  async responder(
+    texto: string,
+    conversacionId?: string,
+    modo: ModoAgente = 'cliente',
+    contexto: ContextoAgente = {},
+  ): Promise<RespuestaAgente> {
     const id = conversacionId ?? randomUUID();
     const { anteriores, ultimoOrden } = conversacionId
       ? await this.historial(conversacionId)
@@ -75,7 +103,10 @@ export class AgenteService {
     let respuesta: string;
     try {
       const permitidas = sesion.herramientas.filter((h) => permitida(h, modo));
-      respuesta = await this.bucle(mensajes, permitidas, sesion, usadas);
+      const base = contexto.idMensaje?.trim() || randomUUID();
+      const ajustar = (l: LlamadaHerramienta) =>
+        modo === 'agente' && HERRAMIENTAS_DE_PEDIDOS.includes(l.function.name) ? conContexto(l, contexto, base) : l;
+      respuesta = await this.bucle(mensajes, permitidas, sesion, usadas, ajustar);
     } finally {
       await sesion.cerrar();
     }
@@ -87,7 +118,14 @@ export class AgenteService {
       mensajes.slice(inicioNuevos).map((m, i) => aEntidad(m, id, ultimoOrden + 1 + i, ahora)),
     );
     const resultado: RespuestaAgente = { conversacionId: id, respuesta, herramientas: usadas };
-    if (modo === 'agente') resultado.datos = preciosConsultados(mensajes.slice(inicioNuevos));
+    if (modo === 'agente') {
+      const nuevos = mensajes.slice(inicioNuevos);
+      resultado.datos = preciosConsultados(nuevos);
+      const catalogos = resultadosDe(nuevos, ['catalogo_repuestos']);
+      if (catalogos.length) resultado.catalogo = catalogos.at(-1);
+      const pedidos = resultadosDe(nuevos, HERRAMIENTAS_DE_PEDIDOS);
+      if (pedidos.length) resultado.pedido = pedidos.at(-1);
+    }
     return resultado;
   }
 
@@ -107,15 +145,23 @@ export class AgenteService {
 
   // El bucle del agente: el modelo pide herramientas, se ejecutan en el MCP y se le devuelven
   // los resultados, hasta que responde con texto.
-  private async bucle(mensajes: Mensaje[], herramientas: Herramienta[], sesion: SesionMcp, usadas: string[]): Promise<string> {
+  private async bucle(
+    mensajes: Mensaje[],
+    herramientas: Herramienta[],
+    sesion: SesionMcp,
+    usadas: string[],
+    ajustar: (l: LlamadaHerramienta) => LlamadaHerramienta = (l) => l,
+  ): Promise<string> {
     for (let vuelta = 1; vuelta <= MAX_VUELTAS; vuelta++) {
       const r = await this.ia.completar(mensajes, herramientas);
       if (r.llamadas.length === 0) return r.texto || SIN_RESPUESTA;
 
       // El pedido del modelo va a la conversación antes de los resultados: cada resultado
       // se enlaza con su pedido por tool_call_id.
-      mensajes.push({ role: 'assistant', content: r.texto || null, tool_calls: r.llamadas });
-      for (const llamada of r.llamadas) {
+      // Se guarda la llamada ya ajustada: el modelo ve lo que de verdad se ejecutó.
+      const llamadas = r.llamadas.map(ajustar);
+      mensajes.push({ role: 'assistant', content: r.texto || null, tool_calls: llamadas });
+      for (const llamada of llamadas) {
         this.logger.log(`vuelta ${vuelta}: ${llamada.function.name} ${llamada.function.arguments}`);
         usadas.push(llamada.function.name);
         mensajes.push({ role: 'tool', tool_call_id: llamada.id, content: await sesion.ejecutar(llamada) });
@@ -127,27 +173,51 @@ export class AgenteService {
 }
 
 function permitida(h: Herramienta, modo: ModoAgente): boolean {
-  if (h.function.name === PUERTA_DEL_AGENTE) return false;
-  return modo === 'cliente' || HERRAMIENTAS_ENTRE_AGENTES.includes(h.function.name);
+  const nombre = h.function.name;
+  if (nombre === PUERTA_DEL_AGENTE) return false;
+  if (modo === 'agente') return HERRAMIENTAS_ENTRE_AGENTES.includes(nombre);
+  return !HERRAMIENTAS_DE_PEDIDOS.includes(nombre);
+}
+
+/**
+ * La orden y el id_mensaje de una acción de pedido los pone el código desde el mensaje del otro
+ * sector: el modelo no puede tocar otra orden ni inventar un id_mensaje que repita o salte una acción.
+ */
+function conContexto(l: LlamadaHerramienta, contexto: ContextoAgente, base: string): LlamadaHerramienta {
+  let args: Record<string, unknown>;
+  try {
+    args = JSON.parse(l.function.arguments || '{}');
+  } catch {
+    return l; // el cliente MCP le devolverá al modelo el error de JSON
+  }
+  if (contexto.codigoOrden) args.codigo_orden = contexto.codigoOrden;
+  if (l.function.name !== 'consultar_orden') args.id_mensaje = `${base}:${l.function.name}`;
+  return { ...l, function: { ...l.function, arguments: JSON.stringify(args) } };
+}
+
+/** Los resultados (JSON, sin ERROR) de las herramientas indicadas en este turno, en orden. */
+function resultadosDe(nuevos: Mensaje[], nombres: string[]): Record<string, unknown>[] {
+  const ids = new Set<string>();
+  for (const m of nuevos) {
+    if (m.role !== 'assistant' || !m.tool_calls) continue;
+    for (const l of m.tool_calls) if (nombres.includes(l.function.name)) ids.add(l.id);
+  }
+  const resultados: Record<string, unknown>[] = [];
+  for (const m of nuevos) {
+    if (m.role !== 'tool' || !ids.has(m.tool_call_id) || m.content.startsWith('ERROR')) continue;
+    try {
+      resultados.push(JSON.parse(m.content));
+    } catch {
+      // Un resultado que no es JSON no es un dato: no se adjunta.
+    }
+  }
+  return resultados;
 }
 
 /** Los resultados de consultar_precio_repuesto de este turno (uno por código; si se consultó dos veces, el último). */
 function preciosConsultados(nuevos: Mensaje[]): unknown[] {
-  const ids = new Set<string>();
-  for (const m of nuevos) {
-    if (m.role !== 'assistant' || !m.tool_calls) continue;
-    for (const l of m.tool_calls) if (l.function.name === 'consultar_precio_repuesto') ids.add(l.id);
-  }
   const porCodigo = new Map<string, unknown>();
-  for (const m of nuevos) {
-    if (m.role !== 'tool' || !ids.has(m.tool_call_id) || m.content.startsWith('ERROR')) continue;
-    try {
-      const dato = JSON.parse(m.content) as { codigo_repuesto?: string };
-      porCodigo.set(String(dato.codigo_repuesto), dato);
-    } catch {
-      // Un resultado que no es JSON no es un precio: no se adjunta.
-    }
-  }
+  for (const dato of resultadosDe(nuevos, ['consultar_precio_repuesto'])) porCodigo.set(String(dato.codigo_repuesto), dato);
   return [...porCodigo.values()];
 }
 

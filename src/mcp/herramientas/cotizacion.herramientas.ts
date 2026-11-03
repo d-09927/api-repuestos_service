@@ -44,6 +44,38 @@ export function desglosarIva(precioConIva: number, ivaPorcentaje: number) {
 
 export function registrarCotizacion(servidor: McpServer, { repuestos, stock }: Servicios, opciones: OpcionesMcp) {
   servidor.registerTool(
+    'catalogo_repuestos',
+    {
+      title: 'Catálogo de repuestos disponibles (para el taller)',
+      description:
+        'Los repuestos que hay en las bodegas, una sola vez por código universal (sin repetir marcas ni bodegas): ' +
+        'código, nombre, categoría, marcas, unidades disponibles y precio desde (pesos, SIN IVA, de la marca más ' +
+        'barata). Úsela cuando pregunten qué repuestos tenemos; para cotizar una cantidad use consultar_precio_repuesto.',
+      inputSchema: z.object({
+        categoria: z.string().trim().max(100).optional().describe('Solo esta categoría; por ejemplo: frenos'),
+      }),
+      annotations: SOLO_LECTURA,
+    },
+    ({ categoria }) =>
+      seguro(async () => {
+        const items = await stock.catalogo(categoria);
+        return {
+          tienda: opciones.tienda,
+          precio_incluye_iva: false,
+          total: items.length,
+          repuestos: items.map((i) => ({
+            codigo_repuesto: i.codigoUniversal,
+            nombre: i.nombre,
+            categoria: i.categoria,
+            marcas: i.marcas,
+            unidades_disponibles: i.unidadesDisponibles,
+            precio_desde: desglosarIva(i.precioDesde, opciones.ivaPorcentaje).precio_unitario,
+          })),
+        };
+      }),
+  );
+
+  servidor.registerTool(
     'consultar_precio_repuesto',
     {
       title: 'Consultar precio de un repuesto (para facturación)',

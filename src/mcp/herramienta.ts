@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { AgenteService } from "../agente/application/agente.service";
+import { PedidosService } from "../pedidos/application/pedidos.service";
 import { RepuestosService } from "../repuestos/application/repuestos.service";
 import { StockService } from "../stock/application/stock.service";
 import { MovimientosService } from "../movimientos/application/movimientos.service";
@@ -11,6 +12,7 @@ import { registrarAgente } from "./herramientas/agente.herramientas";
 import { registrarCotizacion } from "./herramientas/cotizacion.herramientas";
 import { registrarDocumentos } from "./herramientas/documentos.herramientas";
 import { registrarEscritura } from "./herramientas/escritura.herramientas";
+import { registrarPedidos } from "./herramientas/pedidos.herramientas";
 import { registrarPersonas } from "./herramientas/personas.herramientas";
 import { registrarRepuestos } from "./herramientas/repuestos.herramientas";
 import { registrarStock } from "./herramientas/stock.herramientas";
@@ -26,6 +28,7 @@ export interface Servicios {
   compras: ComprasService;
   ventas: VentasService;
   agente: AgenteService;
+  pedidos: PedidosService;
 }
 
 export interface OpcionesMcp {
@@ -56,6 +59,8 @@ servicios: Servicios, opciones:OpcionesMcp
     registrarPersonas(servidor, servicios);
     registrarDocumentos(servidor, servicios);
     registrarCotizacion(servidor, servicios, opciones);
+    // consultar_orden siempre; apartar, entregar, cancelar y pagar solo con escritura habilitada.
+    registrarPedidos(servidor, servicios, opciones);
     // Puerta de entrada de los agentes de otros sectores.
     registrarAgente(servidor, servicios);
 
