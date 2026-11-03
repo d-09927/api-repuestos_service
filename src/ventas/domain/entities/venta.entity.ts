@@ -1,3 +1,5 @@
+import { EstadoVenta } from '../enums/estado-venta.enum';
+
 /** Entidad de dominio: cabecera de una venta. Sus líneas están en venta-detalles. */
 export class Venta {
   id: string;
@@ -7,6 +9,10 @@ export class Venta {
   bodega: string;
   observaciones: string | null;
   total: number;
+  estado: EstadoVenta;
+  /** Referencia del pago (PSE, transferencia). null en las de mostrador y mientras no se pague. */
+  referenciaPago: string | null;
+  pagadaEn: Date | null;
   fecha: Date;
   creadoEn: Date;
 

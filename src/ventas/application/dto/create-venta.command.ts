@@ -12,3 +12,11 @@ export interface CreateVentaCommand {
   observaciones?: string;
   lineas: LineaVentaRegistroCommand[];
 }
+
+/** Opciones que no llegan por HTTP: las usa el módulo de pedidos al entregar una orden de taller. */
+export interface OpcionesVenta {
+  /** La venta queda por cobrar (PENDIENTE_PAGO) en lugar de pagada. */
+  pendienteDePago?: boolean;
+  /** Las unidades salen de lo que estaba reservado para el pedido, no de lo disponible. */
+  desdeReserva?: boolean;
+}

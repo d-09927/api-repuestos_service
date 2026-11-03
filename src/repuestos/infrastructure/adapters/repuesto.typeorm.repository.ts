@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
+import { palabrasDeBusqueda, sinTildesSql } from '../../../common/busqueda';
 import { ConflictError } from '../../../common/domain-error';
 import { PaginaResultado } from '../../../common/paginacion';
 import { repoActual } from '../../../common/unidad-de-trabajo/transaccion-actual';
@@ -49,9 +50,15 @@ export class RepuestoTypeOrmRepository extends RepuestoRepositoryPort {
     if (f.ids) qb.andWhere('r.id IN (:...ids)', { ids: f.ids });
 
     if (f.texto) {
-      const patron = `%${f.texto.replace(/[\\%_]/g, '\\$&')}%`;
-      qb.andWhere('(r.nombre ILIKE :patron OR r.sku ILIKE :patron OR r.descripcion ILIKE :patron)', { patron });
+      // Cada palabra debe aparecer en algún campo, sin importar mayúsculas, tildes ni el plural:
+      // "bujias de iridio" encuentra "Bujía de iridio".
+      const campos = ['r.nombre', 'r.sku', 'r.codigoUniversal', 'r.descripcion'].map(sinTildesSql);
+      palabrasDeBusqueda(f.texto).forEach((palabra, i) => {
+        const patron = `%${palabra.replace(/[\\%_]/g, '\\$&')}%`;
+        qb.andWhere(`(${campos.map((c) => `${c} LIKE :palabra${i}`).join(' OR ')})`, { [`palabra${i}`]: patron });
+      });
     }
+    if (f.codigoUniversal) qb.andWhere('r.codigoUniversal = :codigo', { codigo: f.codigoUniversal.trim().toUpperCase() });
     if (f.marca) qb.andWhere('LOWER(r.marca) = LOWER(:marca)', { marca: f.marca });
     if (f.categoria) qb.andWhere('LOWER(r.categoria) = LOWER(:categoria)', { categoria: f.categoria });
 
@@ -67,6 +74,7 @@ export class RepuestoTypeOrmRepository extends RepuestoRepositoryPort {
     return new Repuesto({
       id: f.id,
       sku: f.sku,
+      codigoUniversal: f.codigoUniversal,
       nombre: f.nombre,
       descripcion: f.descripcion,
       marca: f.marca,

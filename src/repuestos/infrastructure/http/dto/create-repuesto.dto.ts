@@ -13,6 +13,8 @@ export const CompatibilidadSchema = z
 export const CreateRepuestoSchema = z
   .object({
     sku: z.string().trim().min(1).max(50),
+    /** Código universal del repuesto (PAS-DEL-CER). null o ausente si no tiene. */
+    codigoUniversal: z.string().trim().min(1).max(50).nullable().optional(),
     nombre: z.string().trim().min(1).max(200),
     descripcion: z.string().optional(),
     marca: z.string().trim().min(1).max(100),

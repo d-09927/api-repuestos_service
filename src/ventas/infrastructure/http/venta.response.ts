@@ -8,6 +8,9 @@ export function toVentaResponse({ venta: v, detalles }: VentaConDetalles) {
     bodega: v.bodega,
     observaciones: v.observaciones,
     total: v.total,
+    estado: v.estado,
+    referenciaPago: v.referenciaPago,
+    pagadaEn: v.pagadaEn,
     fecha: v.fecha,
     detalles: detalles.map((d) => ({
       repuestoId: d.repuestoId,

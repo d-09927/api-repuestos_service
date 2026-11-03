@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { StockService } from '../../application/stock.service';
 import {
@@ -49,6 +49,12 @@ export class StockController {
   async consultarStock(@Param('repuestoId', ParseUUIDPipe) repuestoId: string) {
     const consulta = await this.service.consultarPorRepuesto(repuestoId);
     return { ...consulta, bodegas: consulta.bodegas.map(toStockResponse) };
+  }
+
+  /** Lo que hay en las bodegas, una vez por código universal (lo que el taller puede pedir). */
+  @Get('catalogo')
+  catalogo(@Query('categoria') categoria?: string) {
+    return this.service.catalogo(categoria);
   }
 
   /** Repuestos que hay que reponer. */

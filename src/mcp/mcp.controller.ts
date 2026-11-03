@@ -1,6 +1,8 @@
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { All, Controller, Req, Res } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { AgenteService } from "../agente/application/agente.service";
+import { PedidosService } from "../pedidos/application/pedidos.service";
 import { ClientesService } from "../clientes/application/clientes.service";
 import { ComprasService } from "../compras/application/compras.service";
 import { MovimientosService } from "../movimientos/application/movimientos.service";
@@ -39,6 +41,8 @@ export class McpController{
         compras: ComprasService,
         movimientos:MovimientosService,
         proveedores: ProveedoresService,
+        agente: AgenteService,
+        pedidos: PedidosService,
 
         private readonly config: ConfigService,
     ){
@@ -46,9 +50,13 @@ export class McpController{
         const manejador = createMcpHandler(()=>
             crearServidorMcp(
                 {
-                    repuestos,stock,ventas,clientes,compras,movimientos,proveedores
+                    repuestos,stock,ventas,clientes,compras,movimientos,proveedores,agente,pedidos
                 },
-                { permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true'},
+                {
+                    permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true',
+                    tienda: this.config.get<string>('TIENDA_NOMBRE', 'Tienda de repuestos'),
+                    ivaPorcentaje: Number(this.config.get('IVA_PORCENTAJE', 19)),
+                },
             ),
         );
         this.atender = toNodeHandler(manejador)

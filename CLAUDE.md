@@ -25,8 +25,9 @@ npm run build
 
 ## Arquitectura (no romper estas reglas)
 
-Un **módulo por tabla**, sin mezclar lógica ni tablas. Los diez módulos: `repuestos`, `compatibilidades`,
-`stock`, `movimientos`, `proveedores`, `clientes`, `compras`, `compra-detalles`, `ventas`, `venta-detalles`.
+Un **módulo por tabla**, sin mezclar lógica ni tablas. Los once módulos: `repuestos`, `compatibilidades`,
+`stock`, `movimientos`, `proveedores`, `clientes`, `compras`, `compra-detalles`, `ventas`, `venta-detalles`, `pedidos`
+(sus líneas van en jsonb dentro de `pedidos`). Además `ia/` y `agente/` (con su tabla `agente_mensajes`).
 
 ```
 src/<modulo>/
@@ -68,8 +69,9 @@ src/mcp/
 ```
 
 - SDK v2: `@modelcontextprotocol/server` y `@modelcontextprotocol/node` (tiene build CommonJS). `inputSchema: z.object({...})`.
-- 13 herramientas de **lectura** siempre; 4 de **escritura** (reservar, liberar, vender, comprar) solo si
-  `MCP_PERMITIR_ESCRITURA=true`. Las de escritura exigen `confirmado: true` y, con `false`, devuelven un resumen.
+- 17 herramientas de **lectura** siempre (incluye `hablar_con_repuestos`, la puerta de los otros agentes, `consultar_precio_repuesto`, `catalogo_repuestos` y `consultar_orden`); 8 de **escritura** solo si `MCP_PERMITIR_ESCRITURA=true`: reservar, liberar,
+  vender y comprar exigen `confirmado: true` (con `false` devuelven un resumen); las 4 de pedidos (apartar, entregar,
+  cancelar, pagar) no, porque la confirmación viene de facturación, pero exigen `id_mensaje`.
 - Los errores se devuelven como resultado `isError` con un mensaje legible, no como excepción.
 - `ComprasModule` y `VentasModule` deben exportar su service (`exports: [...]`) para que el MCP los use.
 - Variables: `MCP_TOKEN` (sin él, `/mcp` responde 503) y `MCP_PERMITIR_ESCRITURA`.
@@ -82,10 +84,24 @@ src/mcp/
 2. ✅ `src/mcp/` funcionando dentro de la API en `/mcp` (excluido del prefijo `/api` en `main.ts`).
 3. ✅ Prueba de punta a punta: `test/mcp.e2e-spec.ts`, se corre con `npm run test:mcp` con la API levantada
    (`MCP_TOKEN=dev-mcp-token`, `MCP_PERMITIR_ESCRITURA=true`). Usa `@modelcontextprotocol/client` (devDependency).
-4. **Agente orquestador** (en código, sin n8n), también como módulo dentro de la API siguiendo `chat/` e `ia/` de La
-   Espiga (un `IaService` con API compatible con OpenAI + historial). Usa las herramientas del MCP en un bucle.
-   Modelo por decidir: NVIDIA (API compatible con OpenAI) o Claude.
-5. Más adelante: anulaciones y devoluciones, autenticación y roles, eventos entre servicios
+4. **Agente** (en código, sin n8n). Hecho: `src/ia/` (`IaService`, API compatible con OpenAI con `tools`) y
+   `src/agente/` (bucle con `MAX_VUELTAS`, cliente MCP por HTTP contra `/mcp`, memoria en la tabla `agente_mensajes`
+   con `conversacionId`) en `POST /api/agente/mensajes`. Modelo: Ollama `qwen3.5-agente` (`ollama/Modelfile`,
+   `num_ctx 16384`; con 4096 la respuesta llega cortada). Solo modo **cliente** (compra directa → venta PAGADA).
+   Falta: modo **facturación** (cotizaciones, venta PENDIENTE_PAGO → DESPACHADA → PAGADA, referencia de la orden,
+   token por llamante) y la comunicación por **HTTP** con los agentes de los otros equipos.
+5. **Integración con facturación** (contratos de los otros equipos: ver memoria / `docs/contrato-repuestos.xlsx`).
+   Fase 1 hecha: `repuestos.codigoUniversal` (código universal del taller, no único), herramienta MCP
+   `consultar_precio_repuesto` (el catálogo guarda precios CON IVA; `precio_unitario` sale SIN IVA, como lo pide facturación), `npm run sembrar:codigos`.
+   **Requisito: todo entre sectores pasa por agentes.** Los otros sectores llaman `hablar_con_repuestos` (MCP) →
+   `AgenteService.responder(texto, id, 'agente')`: prompt `PROMPT_AGENTES`, solo `HERRAMIENTAS_ENTRE_AGENTES` (consulta),
+   y `datos[]` sale de los resultados de `consultar_precio_repuesto`, no del texto del modelo. El agente nunca ve su
+   propia puerta (`PUERTA_DEL_AGENTE`).
+   Fase 2 hecha: módulo `pedidos` (APARTADO → ENTREGADO → PAGADO / CANCELADO), herramientas `apartar_para_orden`,
+   `entregar_orden`, `cancelar_orden`, `registrar_pago_orden`, `consultar_orden`; `ventas.estado` (PAGADA / PENDIENTE_PAGO)
+   y `marcarPagada`; comprador = facturación (`FACTURACION_NIT`). En modo agente el código fija `codigo_orden` e
+   `id_mensaje` (`<id del mensaje>:<herramienta>`). Pendiente: que facturación deje el REST directo y cerrarlo (auth).
+6. Más adelante: anulaciones y devoluciones, autenticación y roles, eventos entre servicios
    (`stock.bajo`, `venta.confirmada`) y agentes de los otros sectores coordinados por un agente superior.
 
 ## Cómo trabajar aquí

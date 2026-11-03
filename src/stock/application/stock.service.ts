@@ -10,8 +10,9 @@ import {
   RegistroMovimiento,
   TipoMovimientoStock,
 } from '../domain/ports/movimiento.service.port';
-import { RepuestoServicePort } from '../domain/ports/repuesto.service.port';
+import { RepuestoDelCatalogo, RepuestoServicePort } from '../domain/ports/repuesto.service.port';
 import { StockRepositoryPort } from '../domain/ports/stock.repository.port';
+import { ItemCatalogo } from './dto/catalogo.result';
 import { ConsultaStock } from './dto/consulta-stock.result';
 import { MovimientoLoteCommand } from './dto/movimiento-lote.command';
 import {
@@ -73,12 +74,33 @@ export class StockService {
     });
   }
 
-  /** Resta las unidades disponibles de varias líneas (ventas). Si una no alcanza, no se mueve nada. */
+  /**
+   * Resta las unidades de varias líneas (ventas). Si una no alcanza, no se mueve nada.
+   * Con desdeReserva salen de lo reservado (entrega de un pedido) y no de lo disponible.
+   */
   registrarSalidas(cmd: MovimientoLoteCommand): Promise<void> {
     const bodega = this.normalizarBodega(cmd.bodega);
     return this.lote(bodega, cmd, (actual, linea) => {
       const stock = this.requerir(actual, linea.repuestoId, bodega);
-      return { stock, movimiento: this.salida(stock, linea.cantidad, false, cmd) };
+      return { stock, movimiento: this.salida(stock, linea.cantidad, cmd.desdeReserva ?? false, cmd) };
+    });
+  }
+
+  /** Aparta las unidades de varias líneas (pedido de una orden de taller). Todo o nada. */
+  reservarVarios(cmd: MovimientoLoteCommand): Promise<void> {
+    const bodega = this.normalizarBodega(cmd.bodega);
+    return this.lote(bodega, cmd, (actual, linea) => {
+      const stock = this.requerir(actual, linea.repuestoId, bodega);
+      return { stock, movimiento: this.reserva(stock, linea.cantidad, cmd) };
+    });
+  }
+
+  /** Devuelve a disponible lo reservado de varias líneas (pedido cancelado o sobrante). Todo o nada. */
+  liberarVarios(cmd: MovimientoLoteCommand): Promise<void> {
+    const bodega = this.normalizarBodega(cmd.bodega);
+    return this.lote(bodega, cmd, (actual, linea) => {
+      const stock = this.requerir(actual, linea.repuestoId, bodega);
+      return { stock, movimiento: this.liberacion(stock, linea.cantidad, cmd) };
     });
   }
 
@@ -96,6 +118,46 @@ export class StockService {
   /** Repuestos que hay que reponer. */
   stockBajo(): Promise<StockItem[]> {
     return this.stocks.listarBajoMinimo();
+  }
+
+  /**
+   * Lo que hay en las bodegas, una vez por código universal (sin repetir marcas ni bodegas): es lo
+   * que el taller puede pedir. Los repuestos sin código universal no salen porque no se pueden pedir.
+   */
+  async catalogo(categoria?: string): Promise<ItemCatalogo[]> {
+    const filas = await this.stocks.listarConDisponible();
+    const filtro = categoria?.trim().toLowerCase();
+    const repuestos = (await this.repuestos.activosPorIds(filas.map((s) => s.repuestoId))).filter(
+      (r) => !filtro || r.categoria.toLowerCase() === filtro,
+    );
+
+    const porCodigo = new Map<string, { repuesto: RepuestoDelCatalogo; disponible: number; bodegas: Set<string> }[]>();
+    for (const r of repuestos) {
+      if (!r.codigoUniversal) continue;
+      const suyas = filas.filter((s) => s.repuestoId === r.id);
+      const marca = {
+        repuesto: r,
+        disponible: suyas.reduce((suma, s) => suma + this.disponible(s), 0),
+        bodegas: new Set(suyas.map((s) => s.bodega)),
+      };
+      porCodigo.set(r.codigoUniversal, [...(porCodigo.get(r.codigoUniversal) ?? []), marca]);
+    }
+
+    return [...porCodigo.entries()]
+      .map(([codigoUniversal, marcas]) => {
+        marcas.sort((a, b) => a.repuesto.precio - b.repuesto.precio);
+        const [masBarata] = marcas;
+        return {
+          codigoUniversal,
+          nombre: sinMarca(masBarata.repuesto.nombre, masBarata.repuesto.marca),
+          categoria: masBarata.repuesto.categoria,
+          marcas: [...new Set(marcas.map((m) => m.repuesto.marca))],
+          unidadesDisponibles: marcas.reduce((suma, m) => suma + m.disponible, 0),
+          precioDesde: masBarata.repuesto.precio,
+          bodegas: [...new Set(marcas.flatMap((m) => [...m.bodegas]))].sort(),
+        };
+      })
+      .sort((a, b) => a.categoria.localeCompare(b.categoria) || a.codigoUniversal.localeCompare(b.codigoUniversal));
   }
 
   // --- reglas de stock ---
@@ -280,4 +342,10 @@ export class StockService {
       throw error;
     }
   }
+}
+
+/** "Juego de pastillas cerámicas Bosch" → "Juego de pastillas cerámicas": el catálogo agrupa marcas. */
+function sinMarca(nombre: string, marca: string): string {
+  const fin = ` ${marca}`;
+  return nombre.toLowerCase().endsWith(fin.toLowerCase()) ? nombre.slice(0, -fin.length).trim() : nombre;
 }

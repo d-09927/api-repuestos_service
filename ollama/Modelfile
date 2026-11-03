@@ -1,0 +1,5 @@
+# Modelo del agente: qwen3.5:4b con más contexto. Por defecto Ollama usa 4096 tokens y solo el
+# prompt con las 17 herramientas del MCP ocupa ~3900: la respuesta llega cortada (finish_reason=length).
+#   ollama create qwen3.5-agente -f ollama/Modelfile
+FROM qwen3.5:4b
+PARAMETER num_ctx 16384

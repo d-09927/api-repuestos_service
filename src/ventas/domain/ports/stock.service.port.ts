@@ -3,6 +3,8 @@ export interface MovimientoDeVenta {
   /** Número de la venta: queda en el historial de movimientos del stock. */
   referencia: string;
   lineas: { repuestoId: string; cantidad: number }[];
+  /** true: salen de lo reservado (entrega de un pedido). */
+  desdeReserva?: boolean;
 }
 
 /**

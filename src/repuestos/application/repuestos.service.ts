@@ -30,6 +30,7 @@ export class RepuestosService {
     const repuesto = new Repuesto({
       id: randomUUID(),
       sku,
+      codigoUniversal: this.normalizarCodigo(cmd.codigoUniversal),
       nombre: textoObligatorio(cmd.nombre, 'El nombre', 200),
       descripcion: cmd.descripcion?.trim() || null,
       marca: textoObligatorio(cmd.marca, 'La marca', 100),
@@ -58,6 +59,7 @@ export class RepuestosService {
     }
     const pagina = await this.repuestos.listar({
       texto: query.texto,
+      codigoUniversal: query.codigoUniversal,
       marca: query.marca,
       categoria: query.categoria,
       ids,
@@ -90,6 +92,7 @@ export class RepuestosService {
 
   async actualizar(id: string, cmd: UpdateRepuestoCommand): Promise<RepuestoDetalle> {
     const repuesto = await this.obtener(id);
+    if (cmd.codigoUniversal !== undefined) repuesto.codigoUniversal = this.normalizarCodigo(cmd.codigoUniversal);
     if (cmd.nombre !== undefined) repuesto.nombre = textoObligatorio(cmd.nombre, 'El nombre', 200);
     if (cmd.descripcion !== undefined) repuesto.descripcion = cmd.descripcion?.trim() || null;
     if (cmd.marca !== undefined) repuesto.marca = textoObligatorio(cmd.marca, 'La marca', 100);
@@ -113,11 +116,26 @@ export class RepuestosService {
     await this.repuestos.guardar(repuesto);
   }
 
+  /** Para el catálogo del stock: los activos de esos ids (los que no existan o estén desactivados no vienen). */
+  async activosPorIds(ids: string[]): Promise<Repuesto[]> {
+    const unicos = [...new Set(ids)];
+    if (!unicos.length) return [];
+    return (await this.repuestos.listar({ ids: unicos, pagina: 1, limite: unicos.length })).items;
+  }
+
   /** Para otros módulos (stock, compras, ventas): el repuesto debe existir y estar activo. */
   async verificarActivo(id: string): Promise<Repuesto> {
     const repuesto = await this.obtener(id);
     if (!repuesto.activo) throw new ConflictError(`El repuesto ${repuesto.sku} está desactivado`);
     return repuesto;
+  }
+
+  /** Mayúsculas y sin espacios, como lo envían taller y facturación (PAS-DEL-CER). Vacío o null: sin código. */
+  private normalizarCodigo(codigo: string | null | undefined): string | null {
+    const limpio = codigo?.trim().toUpperCase();
+    if (!limpio) return null;
+    if (limpio.length > 50) throw new ValidationDomainError('El código universal no puede superar 50 caracteres');
+    return limpio;
   }
 
   private validarPrecio(precio: number): number {

@@ -30,6 +30,17 @@ export class VentaOrmEntity {
   @Column({ type: 'numeric', precision: 14, scale: 2, transformer: numericTransformer })
   total: number;
 
+  /** Las ventas anteriores a este campo eran todas de mostrador: quedan PAGADA. */
+  @Index()
+  @Column({ length: 20, default: 'PAGADA' })
+  estado: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  referenciaPago: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  pagadaEn: Date | null;
+
   @Index()
   @Column({ type: 'timestamptz' })
   fecha: Date;

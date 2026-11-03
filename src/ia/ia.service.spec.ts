@@ -60,9 +60,19 @@ describe('IaService', () => {
     await expect(ia.completar([{ role: 'user', content: 'hola' }])).rejects.toThrow(ServiceUnavailableException);
   });
 
-  it('si no hay conexión con el modelo lanza ServiceUnavailableException', async () => {
+    it('si no hay conexión con el modelo lanza ServiceUnavailableException', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
 
     await expect(ia.completar([{ role: 'user', content: 'hola' }])).rejects.toThrow(ServiceUnavailableException);
   });
+
+  it('si la respuesta llegó cortada por falta de contexto lanza ServiceUnavailableException', async () => {
+    fetchMock.mockResolvedValue(respuestaHttp({ choices: [{ finish_reason: 'length', message: { content: '' } }] }));
+
+    await expect(ia.completar([{ role: 'user', content: 'hola' }])).rejects.toThrow(/sin contexto/);
+  });
 });
+
+
+
+
