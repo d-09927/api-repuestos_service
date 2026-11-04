@@ -14,6 +14,7 @@ import { StockModule } from './stock/stock.module';
 import { VentaDetallesModule } from './venta-detalles/venta-detalles.module';
 import { VentasModule } from './ventas/ventas.module';
 import { AgenteModule } from './agente/agente.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -45,7 +46,9 @@ import { AgenteModule } from './agente/agente.module';
     VentaDetallesModule,
     // Puerta de entrada para agentes (llama a los services de arriba).
     McpModule,
-    AgenteModule
+    AgenteModule,
+    // Bot de Telegram para el cliente que compra directo (otra puerta al agente).
+    TelegramModule,
   ],
 })
 export class AppModule {}

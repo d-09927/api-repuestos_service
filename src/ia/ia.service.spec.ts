@@ -66,6 +66,29 @@ describe('IaService', () => {
     await expect(ia.completar([{ role: 'user', content: 'hola' }])).rejects.toThrow(ServiceUnavailableException);
   });
 
+  it('si el modelo tarda más del tiempo máximo lo dice, en vez de decir que no hay conexión', async () => {
+    fetchMock.mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'));
+
+    await expect(ia.completar([{ role: 'user', content: 'hola' }])).rejects.toThrow(/no respondió en 300 segundos/);
+  });
+
+  it('apaga el razonamiento del modelo por defecto, y con IA_RAZONAMIENTO vacío no envía nada', async () => {
+    fetchMock.mockImplementation(async () => respuestaHttp({ choices: [{ message: { content: 'ok' } }] }));
+
+    await ia.completar([{ role: 'user', content: 'hola' }]);
+    await new IaService(new ConfigService({ IA_RAZONAMIENTO: '' })).completar([{ role: 'user', content: 'hola' }]);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe('none');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('el tiempo máximo se puede cambiar con IA_TIMEOUT_MS', async () => {
+    const lento = new IaService(new ConfigService({ IA_TIMEOUT_MS: '600000' }));
+    fetchMock.mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'));
+
+    await expect(lento.completar([{ role: 'user', content: 'hola' }])).rejects.toThrow(/600 segundos/);
+  });
+
   it('si la respuesta llegó cortada por falta de contexto lanza ServiceUnavailableException', async () => {
     fetchMock.mockResolvedValue(respuestaHttp({ choices: [{ finish_reason: 'length', message: { content: '' } }] }));
 

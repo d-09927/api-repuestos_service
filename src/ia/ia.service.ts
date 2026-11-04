@@ -28,6 +28,9 @@ export class IaService{
     private readonly url:string;
     private readonly llave:string;
     readonly modelo: string;
+    private readonly tiempoMaximoMs: number;
+    /** Cuánto "piensa" el modelo antes de responder. Vacío = no se envía (para APIs que no lo aceptan). */
+    private readonly razonamiento: string;
 
     constructor(
         config:ConfigService
@@ -35,6 +38,9 @@ export class IaService{
         this.url = config.get<string>('IA_URL', 'http://localhost:11434/v1');
         this.llave = config.get<string>('IA_KEY', 'ollama');
         this.modelo = config.get<string>('IA_MODELO', 'qwen3.5:4b');
+        this.tiempoMaximoMs = Number(config.get('IA_TIMEOUT_MS', 300_000));
+        // Con razonamiento, qwen3.5 gasta cientos de tokens pensando antes de cada respuesta: en CPU son minutos por vuelta.
+        this.razonamiento = config.get<string>('IA_RAZONAMIENTO', 'none');
     }
 
     async completar (mensajes: Mensaje[], herramientas:Herramienta[]=[]): Promise<RespuestaModelo> {
@@ -49,11 +55,16 @@ export class IaService{
                     messages:mensajes,
                     tools: herramientas.length ? herramientas : undefined,
                     temperature: 0.2,
+                    reasoning_effort: this.razonamiento || undefined,
                 }),
 
-                signal: AbortSignal.timeout(120_000),
+                signal: AbortSignal.timeout(this.tiempoMaximoMs),
             })
-        }catch{
+        }catch(error){
+            // Con el modelo en frío (Ollama lo descarga tras unos minutos sin uso) la primera respuesta puede tardar más que en uso normal.
+            if ((error as { name?: string })?.name === 'TimeoutError') {
+                throw new ServiceUnavailableException(`El modelo no respondió en ${this.tiempoMaximoMs / 1000} segundos (IA_TIMEOUT_MS)`);
+            }
             throw new ServiceUnavailableException(`No hay conexion con el modelo en ${this.url}`)
         }
         if(!respuesta.ok){
