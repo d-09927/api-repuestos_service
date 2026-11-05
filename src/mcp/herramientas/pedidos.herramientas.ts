@@ -18,6 +18,7 @@ const idMensaje = z
   .min(1)
   .max(120)
   .describe('Identificador único de esta intención: un reintento con el mismo no repite la acción');
+const vin = z.string().optional().describe('VIN del vehículo de la orden (17 caracteres): lo consulta AutoMax para la garantía');
 const lineas = (descripcion: string, minimo: number) =>
   z
     .array(
@@ -38,6 +39,7 @@ export function aRespuestaPedido(p: Pedido, ivaPorcentaje: number) {
   const totalVentas = p.ventas.reduce((t, v) => t + v.total, 0);
   return {
     codigo_orden: p.codigoOrden,
+    vin: p.vin,
     estado: p.estado,
     lineas: p.lineas.map((l) => ({
       codigo_repuesto: l.codigoUniversal,
@@ -85,12 +87,13 @@ export function registrarPedidos(servidor: McpServer, { pedidos }: Servicios, op
       inputSchema: z.object({
         codigo_orden: codigoOrden,
         lineas: lineas('Repuestos a apartar', 1).min(1),
+        vin,
         id_mensaje: idMensaje,
       }),
       annotations: ESCRITURA,
     },
-    ({ codigo_orden, lineas: l, id_mensaje }) =>
-      responder(() => pedidos.apartar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, lineas: aComando(l) })),
+    ({ codigo_orden, lineas: l, vin: v, id_mensaje }) =>
+      responder(() => pedidos.apartar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, vin: v, lineas: aComando(l) })),
   );
 
   servidor.registerTool(
@@ -103,12 +106,13 @@ export function registrarPedidos(servidor: McpServer, { pedidos }: Servicios, op
       inputSchema: z.object({
         codigo_orden: codigoOrden,
         usadas: lineas('Repuestos realmente usados (cantidad 0 o más)', 0),
+        vin,
         id_mensaje: idMensaje,
       }),
       annotations: ESCRITURA,
     },
-    ({ codigo_orden, usadas, id_mensaje }) =>
-      responder(() => pedidos.entregar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, usadas: aComando(usadas) })),
+    ({ codigo_orden, usadas, vin: v, id_mensaje }) =>
+      responder(() => pedidos.entregar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, vin: v, usadas: aComando(usadas) })),
   );
 
   servidor.registerTool(

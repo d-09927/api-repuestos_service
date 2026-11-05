@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConflictError, NotFoundError, ValidationDomainError } from '../../common/domain-error';
 import { textoObligatorio } from '../../common/validaciones';
+import { normalizarVin } from '../../common/vin';
 import { LineaPedido, Pedido } from '../domain/entities/pedido.entity';
 import { EstadoPedido } from '../domain/enums/estado-pedido.enum';
 import { ClienteServicePort } from '../domain/ports/cliente.service.port';
@@ -44,6 +45,7 @@ export class PedidosService {
       throw new ConflictError(`La orden ${codigoOrden} ya tiene un pedido ${existente.estado}`);
     }
 
+    const vin = cmd.vin == null ? null : normalizarVin(cmd.vin);
     const lineas = await this.elegir(this.validarLineas(cmd.lineas, 1));
     const movimientos = this.porBodega(lineas, codigoOrden, (l) => l.cantidadApartada);
     const apartados: MovimientoDePedido[] = [];
@@ -63,6 +65,7 @@ export class PedidosService {
       new Pedido({
         id: randomUUID(),
         codigoOrden,
+        vin,
         estado: EstadoPedido.APARTADO,
         lineas: [],
         ventas: [],
@@ -72,6 +75,7 @@ export class PedidosService {
         actualizadoEn: ahora,
       });
     Object.assign(pedido, {
+      vin,
       estado: EstadoPedido.APARTADO,
       lineas,
       ventas: [],
@@ -95,6 +99,7 @@ export class PedidosService {
     if (pedido.mensajes.includes(idMensaje)) return pedido;
     this.exigirEstado(pedido, EstadoPedido.APARTADO, 'entregar');
 
+    if (cmd.vin != null) pedido.vin = normalizarVin(cmd.vin);
     const usadas = new Map(this.validarLineas(cmd.usadas, 0).map((l) => [l.codigoUniversal, l.cantidad]));
     for (const [codigo, cantidad] of usadas) {
       const linea = pedido.lineas.find((l) => l.codigoUniversal === codigo);
@@ -115,6 +120,8 @@ export class PedidosService {
         pedido.ventas.push(
           await this.ventas.registrarPorCobrar({
             clienteId,
+            codigoOrden: pedido.codigoOrden,
+            vin: pedido.vin,
             bodega: m.bodega,
             observaciones: `Orden de taller ${pedido.codigoOrden}`,
             lineas: m.lineas,

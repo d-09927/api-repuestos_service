@@ -42,6 +42,7 @@ export class PedidoTypeOrmRepository extends PedidoRepositoryPort {
     return new Pedido({
       id: f.id,
       codigoOrden: f.codigoOrden,
+      vin: f.vin,
       estado: f.estado as EstadoPedido,
       lineas: f.lineas,
       ventas: f.ventas,

@@ -6,6 +6,10 @@ export class Venta {
   numero: string;
   /** Opcional: una venta de mostrador puede no tener cliente registrado. */
   clienteId: string | null;
+  /** Vehículo al que va el repuesto. Sin VIN, la venta no cuenta para la garantía de AutoMax. */
+  vin: string | null;
+  /** Orden de taller, si la venta salió de un pedido. */
+  codigoOrden: string | null;
   bodega: string;
   observaciones: string | null;
   total: number;

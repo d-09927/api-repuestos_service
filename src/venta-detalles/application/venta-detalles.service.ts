@@ -35,6 +35,8 @@ export class VentaDetallesService {
         repuestoId: linea.repuestoId,
         sku: linea.sku,
         nombre: linea.nombre,
+        codigoUniversal: linea.codigoUniversal ?? null,
+        categoria: linea.categoria ?? null,
         cantidad: linea.cantidad,
         precioUnitario: linea.precioUnitario,
         subtotal: subtotal(linea.cantidad, linea.precioUnitario),

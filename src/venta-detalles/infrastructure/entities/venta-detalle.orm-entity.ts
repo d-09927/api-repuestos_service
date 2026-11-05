@@ -30,6 +30,12 @@ export class VentaDetalleOrmEntity {
   @Column({ length: 200 })
   nombre: string;
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  codigoUniversal: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  categoria: string | null;
+
   @Column('int')
   cantidad: number;
 

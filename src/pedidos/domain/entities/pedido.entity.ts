@@ -29,6 +29,8 @@ export class Pedido {
   id: string;
   /** Código de la orden de taller (OT-0054). Único. */
   codigoOrden: string;
+  /** Vehículo de la orden: pasa a las ventas, que AutoMax consulta para la garantía. */
+  vin: string | null;
   estado: EstadoPedido;
   lineas: LineaPedido[];
   ventas: VentaDelPedido[];

@@ -21,6 +21,13 @@ export class VentaOrmEntity {
   @JoinColumn({ name: 'clienteId' })
   cliente: Relation<ClienteOrmEntity | null>;
 
+  @Index()
+  @Column({ type: 'varchar', length: 17, nullable: true })
+  vin: string | null;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  codigoOrden: string | null;
+
   @Column({ length: 50 })
   bodega: string;
 

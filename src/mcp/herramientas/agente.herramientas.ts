@@ -29,6 +29,10 @@ export function registrarAgente(servidor: McpServer, { agente }: Servicios) {
           .optional()
           .describe('Código de la orden de taller; por ejemplo: OT-0054. Obligatorio para apartar, entregar, cancelar o pagar.'),
         conversacion_id: z.uuid().optional().describe('El conversacion_id de una respuesta anterior, para continuar esa conversación'),
+        vin: z
+          .string()
+          .optional()
+          .describe('VIN del vehículo de la orden (17 caracteres). Envíelo al apartar o entregar: queda en la venta para la garantía.'),
         id_mensaje: z
           .string()
           .max(120)
@@ -40,10 +44,10 @@ export function registrarAgente(servidor: McpServer, { agente }: Servicios) {
       // Puede apartar, entregar o cobrar (según lo que decida el agente): no es de solo lectura.
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ mensaje, codigo_orden, conversacion_id, id_mensaje }) => {
+    async ({ mensaje, codigo_orden, conversacion_id, id_mensaje, vin }) => {
       try {
         const texto = codigo_orden ? `[Orden ${codigo_orden}] ${mensaje}` : mensaje;
-        const r = await agente.responder(texto, conversacion_id, 'agente', { codigoOrden: codigo_orden, idMensaje: id_mensaje });
+        const r = await agente.responder(texto, conversacion_id, 'agente', { codigoOrden: codigo_orden, idMensaje: id_mensaje, vin });
         return resultado({
           conversacion_id: r.conversacionId,
           respuesta: r.respuesta,

@@ -39,6 +39,9 @@ const ESCRITURA = [
   'registrar_pago_orden',
 ];
 
+// Lo que se crea en catálogo y personas: al terminar se desactiva, para no dejarlo a la vista.
+const creados: string[] = [];
+
 async function crear<T>(ruta: string, cuerpo: unknown): Promise<T> {
   const res = await fetch(`${BASE}/api/${ruta}`, {
     method: 'POST',
@@ -46,7 +49,9 @@ async function crear<T>(ruta: string, cuerpo: unknown): Promise<T> {
     body: JSON.stringify(cuerpo),
   });
   if (!res.ok) throw new Error(`POST ${ruta} → ${res.status}: ${await res.text()}`);
-  return (await res.json()) as T;
+  const creado = await res.json();
+  if (['repuestos', 'proveedores', 'clientes'].includes(ruta)) creados.push(`${ruta}/${creado.id}`);
+  return creado as T;
 }
 
 async function conectar(token = TOKEN): Promise<Client> {
@@ -94,6 +99,7 @@ describe('MCP de repuestos (punta a punta)', () => {
 
   afterAll(async () => {
     await cliente?.close();
+    await Promise.all(creados.map((ruta) => fetch(`${BASE}/api/${ruta}`, { method: 'DELETE' })));
   });
 
   it('rechaza peticiones sin token (401)', async () => {
@@ -305,6 +311,75 @@ describe('MCP de repuestos (punta a punta)', () => {
           precio_desde: 100000,
         },
       ]);
+    });
+  });
+
+  describe('AutoMax: consultar_compras_vin con su propio token', () => {
+    const TOKEN_AUTOMAX = process.env.MCP_TOKEN_AUTOMAX ?? 'dev-token-automax-0001';
+    // Un VIN único por corrida: base 36 sin I, O ni Q, completado hasta 17.
+    const vin = `E2E${sufijo.toUpperCase().replace(/[IOQ]/g, '0')}`.padEnd(17, '1');
+    let automax: Client;
+
+    beforeAll(async () => {
+      const repuesto = await crear<{ id: string }>('repuestos', {
+        sku: `GAR-${sufijo}`, codigoUniversal: `GAR-${sufijo}`, nombre: 'Amortiguador prueba garantía', marca: 'Monroe', categoria: 'Suspensión', precio: 100000,
+      });
+      await crear('stock/entradas', { repuestoId: repuesto.id, bodega: 'PRINCIPAL', cantidad: 2, referencia: 'E2E' });
+      await crear('ventas', { vin, lineas: [{ repuestoId: repuesto.id, cantidad: 1 }] });
+      automax = await conectar(TOKEN_AUTOMAX);
+    });
+
+    afterAll(async () => {
+      await automax?.close();
+    });
+
+    it('la salud responde sin token', async () => {
+      const res = await fetch(`${BASE}/api/salud`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ estado: 'ok' });
+    });
+
+    it('con su token solo ve esa herramienta; con el general no aparece', async () => {
+      expect((await automax.listTools()).tools.map((t) => t.name)).toEqual(['consultar_compras_vin']);
+      expect((await cliente.listTools()).tools.map((t) => t.name)).not.toContain('consultar_compras_vin');
+    });
+
+    it('con compra de esa categoría la devuelve, sin datos personales y con fecha -05:00', async () => {
+      const r = await llamar(automax, 'consultar_compras_vin', { vin: vin.toLowerCase(), categoria: 'suspension' });
+
+      expect(r.isError).toBe(false);
+      expect(r.datos.compras).toEqual([
+        {
+          fecha: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-05:00$/),
+          codigo_repuesto: `GAR-${sufijo}`.toUpperCase(),
+          categoria: 'suspension',
+          descripcion: 'Amortiguador prueba garantía',
+          cantidad: 1,
+          origen: 'mostrador',
+          codigo_orden: null,
+        },
+      ]);
+    });
+
+    it('sin compras de esa categoría responde la lista vacía', async () => {
+      const r = await llamar(automax, 'consultar_compras_vin', { vin, categoria: 'frenos' });
+
+      expect(r.datos).toEqual({ compras: [] });
+    });
+
+    it('VIN mal formado o categoría desconocida: isError con mensaje en español', async () => {
+      const malVin = await llamar(automax, 'consultar_compras_vin', { vin: 'ABC', categoria: 'frenos' });
+      const malaCategoria = await llamar(automax, 'consultar_compras_vin', { vin, categoria: 'llantas' });
+
+      expect(malVin.isError).toBe(true);
+      expect(malVin.texto).toMatch(/VIN/);
+      expect(malaCategoria.isError).toBe(true);
+      expect(malaCategoria.texto).toMatch(/Categoría desconocida/);
+    });
+
+    it('un token falso responde 401', async () => {
+      const res = await fetch(`${BASE}/mcp`, { method: 'POST', headers: { Authorization: 'Bearer token-falso-de-prueba' } });
+      expect(res.status).toBe(401);
     });
   });
 

@@ -14,7 +14,14 @@ export class RepuestoLocalAdapter extends RepuestoServicePort {
     return Promise.all(
       unicos.map(async (id) => {
         const repuesto = await this.repuestos.verificarActivo(id);
-        return { id: repuesto.id, sku: repuesto.sku, nombre: repuesto.nombre, precio: repuesto.precio };
+        return {
+          id: repuesto.id,
+          sku: repuesto.sku,
+          nombre: repuesto.nombre,
+          codigoUniversal: repuesto.codigoUniversal,
+          categoria: repuesto.categoria,
+          precio: repuesto.precio,
+        };
       }),
     );
   }

@@ -12,10 +12,14 @@ interface ConOrden {
 }
 
 export interface ApartarPedidoCommand extends ConOrden {
+  /** VIN del vehículo de la orden. */
+  vin?: string | null;
   lineas: LineaCodigoCommand[];
 }
 
 export interface EntregarPedidoCommand extends ConOrden {
+  /** Si no se envió al apartar, o para corregirlo. */
+  vin?: string | null;
   /** Lo que realmente usó el taller. Lo que no venga se toma como 0 usados (vuelve a disponible). */
   usadas: LineaCodigoCommand[];
 }

@@ -7,6 +7,8 @@ export interface LineaVentaRegistroCommand {
 export interface CreateVentaCommand {
   /** Opcional: una venta de mostrador puede no tener cliente. */
   clienteId?: string;
+  /** VIN del vehículo al que va el repuesto (lo consulta AutoMax para la garantía). */
+  vin?: string | null;
   /** Bodega de la que salen los repuestos. Si no se indica, PRINCIPAL. */
   bodega?: string;
   observaciones?: string;
@@ -19,4 +21,6 @@ export interface OpcionesVenta {
   pendienteDePago?: boolean;
   /** Las unidades salen de lo que estaba reservado para el pedido, no de lo disponible. */
   desdeReserva?: boolean;
+  /** Orden de taller de la que sale la venta. */
+  codigoOrden?: string;
 }

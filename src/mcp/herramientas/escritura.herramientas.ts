@@ -105,6 +105,7 @@ export function registrarEscritura(servidor: McpServer, { repuestos, stock, vent
         'Requiere confirmación del usuario.',
       inputSchema: z.object({
         clienteId: id('Id del cliente, según buscar_clientes').optional(),
+        vin: z.string().optional().describe('VIN del vehículo al que va el repuesto (17 caracteres, sin I, O ni Q), tal como lo dio el cliente'),
         bodega,
         observaciones: z.string().max(500).optional(),
         lineas: z
@@ -139,6 +140,7 @@ export function registrarEscritura(servidor: McpServer, { repuestos, stock, vent
             accion: 'Registrar venta',
             resumen: {
               clienteId: datos.clienteId ?? 'sin cliente (mostrador)',
+              vin: datos.vin ?? 'sin VIN',
               lineas,
               total: redondear(lineas.reduce((t, l) => t + l.subtotal, 0)),
             },
