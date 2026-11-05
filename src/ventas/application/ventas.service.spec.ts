@@ -32,6 +32,9 @@ class VentasEnMemoria extends VentaRepositoryPort {
   async listar(): Promise<PaginaResultado<Venta>> {
     return { items: this.filas, total: this.filas.length, pagina: 1, limite: 20 };
   }
+  async listarPorVin(vin: string) {
+    return this.filas.filter((v) => v.vin === vin).sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+  }
 }
 
 class DetallesFalsos extends VentaDetalleServicePort {
@@ -52,8 +55,10 @@ class ClientesFalsos extends ClienteServicePort {
 }
 
 class RepuestosFalsos extends RepuestoServicePort {
+  codigo: string | null = 'FIL-ACE-STD';
+  categoria = 'Filtros';
   async obtenerActivos(ids: string[]): Promise<RepuestoInfo[]> {
-    return ids.map((id) => ({ id, sku: 'SKU-1', nombre: 'Filtro', precio: 10 }));
+    return ids.map((id) => ({ id, sku: 'SKU-1', nombre: 'Filtro', codigoUniversal: this.codigo, categoria: this.categoria, precio: 10 }));
   }
 }
 
@@ -168,6 +173,69 @@ describe('VentasService', () => {
     it('exige la referencia del pago', async () => {
       const { venta } = await service.registrar(comando, { pendienteDePago: true });
       await expect(service.marcarPagada(venta.id, '  ')).rejects.toThrow('referencia del pago');
+    });
+  });
+
+  describe('VIN y garantía', () => {
+    const VIN = '3MZBP2SM1SM600006';
+    let repuestos: RepuestosFalsos;
+
+    beforeEach(() => {
+      repuestos = new RepuestosFalsos();
+      service = new VentasService(ventas, detalles, new ClientesFalsos(), repuestos, stock, new SinTransaccion());
+    });
+
+    const vender = (categoria: string, codigo: string, vin: string = VIN, opciones = {}) => {
+      repuestos.categoria = categoria;
+      repuestos.codigo = codigo;
+      return service.registrar({ vin, lineas: [{ repuestoId: R1, cantidad: 2 }] }, opciones);
+    };
+
+    it('guarda el VIN en mayúsculas y rechaza uno mal formado antes de mover el stock', async () => {
+      const { venta } = await vender('Frenos', 'PAS-DEL-CER', ' 3mzbp2sm1sm600006 ');
+      expect(venta.vin).toBe(VIN);
+
+      stock.descuentos = [];
+      await expect(vender('Frenos', 'PAS-DEL-CER', 'ABC')).rejects.toThrow('17');
+      await expect(vender('Frenos', 'PAS-DEL-CER', '3MZBP2SM1SM60000O')).rejects.toThrow('17');
+      expect(stock.descuentos).toEqual([]);
+    });
+
+    it('devuelve lo vendido para ese VIN y esa categoría, convirtiendo la del catálogo', async () => {
+      await vender('Suspensión', 'AMO-TRA-GAS');
+      await vender('Frenos y discos', 'DIS-DEL-VENT');
+
+      expect(await service.comprasPorVin({ vin: VIN, categoria: 'suspension' })).toEqual([
+        expect.objectContaining({ codigoRepuesto: 'AMO-TRA-GAS', categoria: 'suspension', cantidad: 2, codigoOrden: null }),
+      ]);
+      expect(await service.comprasPorVin({ vin: VIN, categoria: 'frenos' })).toEqual([
+        expect.objectContaining({ codigoRepuesto: 'DIS-DEL-VENT', categoria: 'frenos' }),
+      ]);
+      expect(await service.comprasPorVin({ vin: VIN, categoria: 'motor' })).toEqual([]);
+    });
+
+    it('no cuenta otro VIN, ventas sin VIN ni categorías que no son de garantía', async () => {
+      await vender('Frenos', 'PAS-DEL-CER', '9FBHJD204PM100001');
+      repuestos.categoria = 'Frenos';
+      await service.registrar({ lineas: [{ repuestoId: R1, cantidad: 1 }] });
+      await vender('Lubricantes', 'ACE-5W30-1L');
+
+      expect(await service.comprasPorVin({ vin: VIN, categoria: 'frenos' })).toEqual([]);
+      expect(await service.comprasPorVin({ vin: VIN, categoria: 'motor' })).toEqual([]);
+    });
+
+    it('filtra por código y conserva la orden de taller', async () => {
+      await vender('Frenos', 'PAS-DEL-CER', VIN, { codigoOrden: 'OT-0022' });
+      await vender('Frenos', 'DIS-DEL-VENT');
+
+      expect(await service.comprasPorVin({ vin: VIN, categoria: 'frenos', codigoRepuesto: 'pas-del-cer' })).toEqual([
+        expect.objectContaining({ codigoRepuesto: 'PAS-DEL-CER', codigoOrden: 'OT-0022' }),
+      ]);
+    });
+
+    it('rechaza un VIN mal formado y una categoría desconocida', async () => {
+      await expect(service.comprasPorVin({ vin: 'ABC', categoria: 'frenos' })).rejects.toThrow('17');
+      await expect(service.comprasPorVin({ vin: VIN, categoria: 'llantas' })).rejects.toThrow('Categoría desconocida');
     });
   });
 });

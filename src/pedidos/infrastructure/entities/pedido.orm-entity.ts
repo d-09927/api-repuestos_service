@@ -15,6 +15,9 @@ export class PedidoOrmEntity {
   @Column({ length: 50 })
   codigoOrden: string;
 
+  @Column({ type: 'varchar', length: 17, nullable: true })
+  vin: string | null;
+
   @Index()
   @Column({ length: 20 })
   estado: string;

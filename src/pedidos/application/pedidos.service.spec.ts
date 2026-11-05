@@ -180,7 +180,7 @@ describe('PedidosService', () => {
 
       expect(p.estado).toBe(EstadoPedido.ENTREGADO);
       expect(ventas.registradas).toEqual([
-        { clienteId: 'cliente-facturacion', bodega: 'PRINCIPAL', observaciones: 'Orden de taller OT-0054', lineas: [{ repuestoId: 'monroe', cantidad: 2 }] },
+        { clienteId: 'cliente-facturacion', codigoOrden: 'OT-0054', vin: null, bodega: 'PRINCIPAL', observaciones: 'Orden de taller OT-0054', lineas: [{ repuestoId: 'monroe', cantidad: 2 }] },
       ]);
       expect(p.ventas).toEqual([{ id: 'venta-1', numero: 'V-000001', bodega: 'PRINCIPAL', total: 100 }]);
       // Las pastillas no se usaron: vuelven a disponible.
@@ -256,6 +256,30 @@ describe('PedidosService', () => {
       await expect(pagar()).rejects.toThrow('está APARTADO: no se puede pagar');
       await service.entregar({ codigoOrden: 'OT-0054', idMensaje: 'e', usadas: [] });
       await expect(pagar()).rejects.toThrow('no hay nada que cobrar');
+    });
+  });
+
+  describe('VIN de la orden', () => {
+    const VIN = '3MZBP2SM1SM600006';
+    const lineas = [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }];
+
+    it('el VIN de apartar y la orden pasan a la venta al entregar', async () => {
+      await service.apartar({ codigoOrden: 'OT-1', idMensaje: 'a', vin: ' 3mzbp2sm1sm600006 ', lineas });
+      await service.entregar({ codigoOrden: 'OT-1', idMensaje: 'b', usadas: lineas });
+
+      expect(ventas.registradas[0]).toMatchObject({ vin: VIN, codigoOrden: 'OT-1' });
+    });
+
+    it('el VIN también se puede enviar al entregar', async () => {
+      await service.apartar({ codigoOrden: 'OT-1', idMensaje: 'a', lineas });
+      await service.entregar({ codigoOrden: 'OT-1', idMensaje: 'b', vin: VIN, usadas: lineas });
+
+      expect(ventas.registradas[0].vin).toBe(VIN);
+    });
+
+    it('un VIN mal formado no aparta nada', async () => {
+      await expect(service.apartar({ codigoOrden: 'OT-1', idMensaje: 'a', vin: 'ABC', lineas })).rejects.toThrow('17');
+      expect(stock.reservas).toEqual([]);
     });
   });
 });

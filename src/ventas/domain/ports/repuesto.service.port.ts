@@ -2,6 +2,8 @@ export interface RepuestoInfo {
   id: string;
   sku: string;
   nombre: string;
+  codigoUniversal: string | null;
+  categoria: string;
   /** Precio de venta vigente en el catálogo. */
   precio: number;
 }

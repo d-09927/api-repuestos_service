@@ -54,6 +54,11 @@ export class VentaTypeOrmRepository extends VentaRepositoryPort implements OnMod
     return { items: filas.map((fila) => this.aDominio(fila)), total, pagina: f.pagina, limite: f.limite };
   }
 
+  async listarPorVin(vin: string): Promise<Venta[]> {
+    const filas = await repoActual(this.base).find({ where: { vin }, order: { fecha: 'DESC', numero: 'DESC' } });
+    return filas.map((fila) => this.aDominio(fila));
+  }
+
   // --- traducción dominio <-> tabla ---
 
   private aOrm(v: Venta): VentaOrmEntity {
@@ -61,6 +66,8 @@ export class VentaTypeOrmRepository extends VentaRepositoryPort implements OnMod
       id: v.id,
       numero: v.numero,
       clienteId: v.clienteId,
+      vin: v.vin,
+      codigoOrden: v.codigoOrden,
       bodega: v.bodega,
       observaciones: v.observaciones,
       total: v.total,
@@ -77,6 +84,8 @@ export class VentaTypeOrmRepository extends VentaRepositoryPort implements OnMod
       id: f.id,
       numero: f.numero,
       clienteId: f.clienteId,
+      vin: f.vin,
+      codigoOrden: f.codigoOrden,
       bodega: f.bodega,
       observaciones: f.observaciones,
       total: f.total,

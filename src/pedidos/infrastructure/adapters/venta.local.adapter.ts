@@ -11,7 +11,8 @@ export class VentaLocalAdapter extends VentaServicePort {
   }
 
   async registrarPorCobrar(v: VentaPorCobrar): Promise<VentaDelPedido> {
-    const { venta } = await this.ventas.registrar(v, { pendienteDePago: true, desdeReserva: true });
+    const { codigoOrden, ...datos } = v;
+    const { venta } = await this.ventas.registrar(datos, { pendienteDePago: true, desdeReserva: true, codigoOrden });
     return { id: venta.id, numero: venta.numero, bodega: venta.bodega, total: venta.total };
   }
 

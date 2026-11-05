@@ -301,6 +301,23 @@ describe('AgenteService', () => {
       expect(r.pedido).toEqual({ codigo_orden: 'OT-0054', estado: 'APARTADO' });
     });
 
+    it('el VIN lo pone el código: el del mensaje, y si no vino, el del modelo se descarta', async () => {
+      sesion.ejecutar.mockResolvedValue('{}');
+      const pedir = pideHerramientas(pide('a', 'apartar_para_orden', { lineas: [], vin: 'INVENTADO' }));
+      completar
+        .mockResolvedValueOnce(pedir)
+        .mockResolvedValueOnce(textoFinal('ok'))
+        .mockResolvedValueOnce(pedir)
+        .mockResolvedValueOnce(textoFinal('ok'));
+
+      await agente.responder('Aparta', undefined, 'agente', { codigoOrden: 'OT-1', vin: '3MZBP2SM1SM600006' });
+      await agente.responder('Aparta', undefined, 'agente', { codigoOrden: 'OT-1' });
+
+      const [conVin, sinVin] = sesion.ejecutar.mock.calls.map(([l]) => JSON.parse(l.function.arguments));
+      expect(conVin.vin).toBe('3MZBP2SM1SM600006');
+      expect(sinVin).not.toHaveProperty('vin');
+    });
+
     it('sin id_mensaje del otro sector, cada respuesta usa uno nuevo (no se confunde con otra intención)', async () => {
       sesion.ejecutar.mockResolvedValue('{}');
       completar

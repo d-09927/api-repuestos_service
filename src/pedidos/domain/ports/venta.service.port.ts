@@ -2,6 +2,8 @@ import { VentaDelPedido } from '../entities/pedido.entity';
 
 export interface VentaPorCobrar {
   clienteId: string;
+  codigoOrden: string;
+  vin: string | null;
   bodega: string;
   observaciones: string;
   lineas: { repuestoId: string; cantidad: number }[];

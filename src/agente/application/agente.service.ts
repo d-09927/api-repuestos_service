@@ -46,6 +46,8 @@ export interface ContextoAgente {
   codigoOrden?: string;
   /** id_mensaje del otro sector: de él sale el de cada acción, así un reintento no repite nada. */
   idMensaje?: string;
+  /** VIN del mensaje: el modelo no puede poner otro, porque decide la garantía del vehículo. */
+  vin?: string;
 }
 
 const SIN_RESPUESTA = 'No tengo una respuesta para eso. ¿Me lo puede decir de otra forma?';
@@ -192,6 +194,8 @@ function conContexto(l: LlamadaHerramienta, contexto: ContextoAgente, base: stri
   }
   if (contexto.codigoOrden) args.codigo_orden = contexto.codigoOrden;
   if (l.function.name !== 'consultar_orden') args.id_mensaje = `${base}:${l.function.name}`;
+  if (contexto.vin) args.vin = contexto.vin;
+  else delete args.vin;
   return { ...l, function: { ...l.function, arguments: JSON.stringify(args) } };
 }
 

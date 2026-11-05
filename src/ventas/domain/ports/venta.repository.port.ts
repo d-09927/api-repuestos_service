@@ -16,4 +16,6 @@ export abstract class VentaRepositoryPort {
   abstract guardar(venta: Venta): Promise<void>;
   abstract buscarPorId(id: string): Promise<Venta | null>;
   abstract listar(filtros: FiltrosVenta): Promise<PaginaResultado<Venta>>;
+  /** Todas las del vehículo, las más recientes primero. */
+  abstract listarPorVin(vin: string): Promise<Venta[]>;
 }
