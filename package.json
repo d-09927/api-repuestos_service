@@ -11,7 +11,8 @@
     "start:prod": "node dist/main",
     "test": "jest",
     "test:mcp": "jest --config test/jest-e2e.json --runInBand",
-    "sembrar:codigos": "node scripts/sembrar-codigos-universales.js"
+    "sembrar:codigos": "node scripts/sembrar-codigos-universales.js",
+    "sembrar:garantia": "node --env-file=.env scripts/sembrar-garantia-automax.js"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.4.0",

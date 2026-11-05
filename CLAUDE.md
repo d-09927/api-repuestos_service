@@ -101,6 +101,11 @@ src/mcp/
    `entregar_orden`, `cancelar_orden`, `registrar_pago_orden`, `consultar_orden`; `ventas.estado` (PAGADA / PENDIENTE_PAGO)
    y `marcarPagada`; comprador = facturación (`FACTURACION_NIT`). En modo agente el código fija `codigo_orden` e
    `id_mensaje` (`<id del mensaje>:<herramienta>`). Pendiente: que facturación deje el REST directo y cerrarlo (auth).
+   **AutoMax (concesionario), garantías:** herramienta `consultar_compras_vin`, visible **solo** con `MCP_TOKEN_AUTOMAX`
+   (16+ caracteres; ese token no ve nada más y el general no la ve). Es la excepción a "todo por agentes": debe responder
+   en menos de 3 s. `ventas.vin` y `ventas.codigoOrden`; `venta_detalles` copia `codigoUniversal` y `categoria`.
+   `GET /api/salud` sin token. En modo agente el VIN lo fija el código desde `hablar_con_repuestos { vin }`.
+   Venta de prueba: `npm run sembrar:garantia`.
 6. Más adelante: anulaciones y devoluciones, autenticación y roles, eventos entre servicios
    (`stock.bajo`, `venta.confirmada`) y agentes de los otros sectores coordinados por un agente superior.
 

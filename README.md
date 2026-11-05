@@ -73,6 +73,21 @@ precioDesde (CON IVA, el del catálogo), bodegas[] }`. MCP: `{ codigo_repuesto, 
 unidades_disponibles, precio_desde (SIN IVA) }`. El taller lo pide por mensaje ("¿Qué repuestos de frenos tienen?") y
 `hablar_con_repuestos` lo devuelve en `catalogo`, tal como salió de la herramienta.
 
+### Garantías de AutoMax: `consultar_compras_vin` y `GET /api/salud`
+
+AutoMax (concesionario) pregunta si se vendió un repuesto de un componente para un vehículo; si es así, la garantía no
+aplica. Se conecta a `/mcp` con su propio token (`MCP_TOKEN_AUTOMAX`, 16 caracteres o más), que **solo** ve esta
+herramienta; el token general no la ve. No pasa por el agente porque debe responder en menos de 3 s.
+
+- Entrada: `{ vin, categoria, codigo_repuesto? }`, con `categoria` en `frenos | suspension | motor | electrico | transmision`.
+- Salida: `{ compras: [{ fecha (ISO -05:00), codigo_repuesto, categoria, descripcion, cantidad, origen, codigo_orden }] }`,
+  máximo 100, las más recientes primero. Sin datos personales. VIN mal formado o categoría desconocida: `isError`.
+- Las categorías del catálogo se convierten quitando mayúsculas y tildes (`Suspensión` → `suspension`). `Filtros` y
+  `Lubricantes` no son componentes de garantía: no salen.
+- Las ventas guardan `vin` (opcional en `POST /api/ventas` y en `registrar_venta`). En una orden de taller se envía en
+  `hablar_con_repuestos { vin }` al apartar o entregar. **Una venta sin VIN no cuenta para la garantía.**
+- `GET /api/salud` responde `{"estado":"ok"}` sin token. Venta de prueba de REL-1006: `npm run sembrar:garantia`.
+
 ### La herramienta que usa el agente: `consultar_precio_repuesto`
 
 Facturación (otro grupo) cotiza con los **códigos universales** del taller (`PAS-DEL-CER`, `AMO-DEL-GAS`…), no con
