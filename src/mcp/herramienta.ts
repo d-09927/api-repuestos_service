@@ -12,6 +12,7 @@ import { registrarAgente } from "./herramientas/agente.herramientas";
 import { registrarCotizacion } from "./herramientas/cotizacion.herramientas";
 import { registrarDocumentos } from "./herramientas/documentos.herramientas";
 import { registrarEscritura } from "./herramientas/escritura.herramientas";
+import { registrarGarantias } from "./herramientas/garantias.herramientas";
 import { registrarPedidos } from "./herramientas/pedidos.herramientas";
 import { registrarPersonas } from "./herramientas/personas.herramientas";
 import { registrarRepuestos } from "./herramientas/repuestos.herramientas";
@@ -68,4 +69,11 @@ servicios: Servicios, opciones:OpcionesMcp
     if (opciones.permitirEscritura) registrarEscritura(servidor, servicios);
 
     return servidor
+}
+
+/** El servidor que ve AutoMax con su token: solo la consulta de la garantía, nada del resto del MCP. */
+export function crearServidorAutomax(servicios: Servicios): McpServer {
+    const servidor = new McpServer({ name: "repuestos-garantias", version: '1.0.0' });
+    registrarGarantias(servidor, servicios);
+    return servidor;
 }

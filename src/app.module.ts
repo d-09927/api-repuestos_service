@@ -11,6 +11,7 @@ import { MovimientosModule } from './movimientos/movimientos.module';
 import { PedidosModule } from './pedidos/pedidos.module';
 import { ProveedoresModule } from './proveedores/proveedores.module';
 import { RepuestosModule } from './repuestos/repuestos.module';
+import { SaludModule } from './salud/salud.module';
 import { StockModule } from './stock/stock.module';
 import { VentaDetallesModule } from './venta-detalles/venta-detalles.module';
 import { VentasModule } from './ventas/ventas.module';
@@ -33,6 +34,7 @@ import { AgenteModule } from './agente/agente.module';
       }),
     }),
     UnidadDeTrabajoModule,
+    SaludModule,
     // Un módulo por tabla.
     RepuestosModule,
     CompatibilidadesModule,
