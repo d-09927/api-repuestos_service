@@ -22,8 +22,7 @@ export const PUERTA_DEL_AGENTE = 'hablar_con_repuestos';
 /** El pedido de una orden de taller: solo lo maneja el agente cuando le habla otro sector, nunca con un cliente. */
 export const HERRAMIENTAS_DE_PEDIDOS = [
   'consultar_orden',
-  'apartar_para_orden',
-  'entregar_orden',
+  'despachar_orden',
   'cancelar_orden',
   'registrar_pago_orden',
 ];

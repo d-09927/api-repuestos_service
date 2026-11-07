@@ -14,6 +14,9 @@ import { crearServidorAutomax, crearServidorMcp } from "./herramienta";
 import { toNodeHandler } from "@modelcontextprotocol/node"; 
 import { timingSafeEqual } from "crypto";
 import { Request, Response } from "express";
+import { BitacoraService } from "../bitacora/application/bitacora.service";
+import { Llamante } from "../bitacora/domain/enums/llamante.enum";
+import { AGENTE_PROPIO, CABECERA_LLAMANTE } from "./llamante";
 
  
 function tokenDe(req: { headers: Record<string, unknown> }): string | undefined {
@@ -36,6 +39,7 @@ export class McpController{
 
     private readonly logger = new Logger('MCP');
     private readonly atender;
+    private readonly atenderAgente;
     private readonly atenderAutomax;
 
     constructor(
@@ -48,28 +52,23 @@ export class McpController{
         proveedores: ProveedoresService,
         agente: AgenteService,
         pedidos: PedidosService,
+        bitacora: BitacoraService,
 
         private readonly config: ConfigService,
     ){
-        // servidor por peticion
-        const manejador = createMcpHandler(()=>
-            crearServidorMcp(
-                {
-                    repuestos,stock,ventas,clientes,compras,movimientos,proveedores,agente,pedidos
-                },
-                {
-                    permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true',
-                    tienda: this.config.get<string>('TIENDA_NOMBRE', 'Tienda de repuestos'),
-                    ivaPorcentaje: Number(this.config.get('IVA_PORCENTAJE', 19)),
-                },
-            ),
-        );
-        this.atender = toNodeHandler(manejador)
-        this.atenderAutomax = toNodeHandler(createMcpHandler(()=>
-            crearServidorAutomax({
-                repuestos,stock,ventas,clientes,compras,movimientos,proveedores,agente,pedidos
+        const servicios = { repuestos,stock,ventas,clientes,compras,movimientos,proveedores,agente,pedidos,bitacora };
+        // servidor por peticion; uno por llamante para que la bitácora sepa quién llamó
+        const manejadorPara = (llamante: Llamante) => toNodeHandler(createMcpHandler(()=>
+            crearServidorMcp(servicios, {
+                permitirEscritura: this.config.get('MCP_PERMITIR_ESCRITURA') === 'true',
+                tienda: this.config.get<string>('TIENDA_NOMBRE', 'Tienda de repuestos'),
+                ivaPorcentaje: Number(this.config.get('IVA_PORCENTAJE', 19)),
+                llamante,
             }),
         ));
+        this.atender = manejadorPara(Llamante.EXTERNO);
+        this.atenderAgente = manejadorPara(Llamante.AGENTE);
+        this.atenderAutomax = toNodeHandler(createMcpHandler(()=> crearServidorAutomax(servicios)));
         const automax = this.config.get<string>('MCP_TOKEN_AUTOMAX');
         if (automax && automax.length < LARGO_MINIMO_AUTOMAX) {
             this.logger.warn(`MCP_TOKEN_AUTOMAX se ignora: debe tener ${LARGO_MINIMO_AUTOMAX} caracteres o más`);
@@ -96,6 +95,8 @@ export class McpController{
             res.status(401).json({ error: 'Falta el token de acceso o no es valido'});
             return
         }
-        await this.atender(req as never, res, req.body)
+        // La cabecera solo sirve para la bitácora (no da permisos): la manda nuestro agente.
+        const esAgente = req.headers[CABECERA_LLAMANTE] === AGENTE_PROPIO;
+        await (esAgente ? this.atenderAgente : this.atender)(req as never, res, req.body)
     }
 }

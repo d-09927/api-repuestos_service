@@ -5,7 +5,7 @@ import { EstadoPedido } from '../../domain/enums/estado-pedido.enum';
 import { toPedidoResponse } from './pedido.response';
 
 /**
- * Solo lectura. Apartar, entregar, cancelar y pagar no tienen endpoint REST a propósito: los
+ * Solo lectura. Despachar, cancelar y pagar no tienen endpoint REST a propósito: los
  * otros sectores lo piden por mensaje a nuestro agente (hablar_con_repuestos), que usa el MCP.
  */
 @ApiTags('pedidos')

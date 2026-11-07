@@ -109,140 +109,152 @@ describe('PedidosService', () => {
     stock.poner('bosch', 'PRINCIPAL', 8);
   });
 
-  const apartar = (idMensaje = 'm-apartar', lineas = [{ codigoUniversal: 'amo-del-gas', cantidad: 2 }, { codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }]) =>
-    service.apartar({ codigoOrden: ' ot-0054 ', idMensaje, lineas });
+  const despachar = (idMensaje = 'm-despachar', lineas = [{ codigoUniversal: 'amo-del-gas', cantidad: 2 }, { codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }]) =>
+    service.despachar({ codigoOrden: ' ot-0054 ', idMensaje, lineas });
 
-  describe('apartar', () => {
-    it('elige la marca más barata que alcance en una bodega y la aparta con la orden como referencia', async () => {
-      const p = await apartar();
+  describe('despachar (el cliente aceptó la cotización)', () => {
+    it('elige la marca más barata que alcance, la aparta y deja la venta PENDIENTE_PAGO; el pedido queda DESPACHADO', async () => {
+      const p = await despachar();
 
       expect(p.codigoOrden).toBe('OT-0054');
-      expect(p.estado).toBe(EstadoPedido.APARTADO);
-      // KYB es más barato pero solo hay 1: se aparta Monroe.
-      expect(p.lineas.map((l) => [l.codigoUniversal, l.sku, l.bodega, l.cantidadApartada])).toEqual([
-        ['AMO-DEL-GAS', 'MON-AMO-DEL-GAS', 'PRINCIPAL', 2],
-        ['PAS-DEL-CER', 'BOS-PAS-DEL-CER', 'PRINCIPAL', 1],
+      expect(p.estado).toBe(EstadoPedido.DESPACHADO);
+      // KYB es más barato pero solo hay 1: se despacha Monroe.
+      expect(p.lineas.map((l) => [l.codigoUniversal, l.sku, l.bodega, l.cantidadApartada, l.cantidadEntregada])).toEqual([
+        ['AMO-DEL-GAS', 'MON-AMO-DEL-GAS', 'PRINCIPAL', 2, 2],
+        ['PAS-DEL-CER', 'BOS-PAS-DEL-CER', 'PRINCIPAL', 1, 1],
       ]);
-      expect(stock.reservas).toEqual([
-        { bodega: 'PRINCIPAL', referencia: 'OT-0054', lineas: [{ repuestoId: 'monroe', cantidad: 2 }, { repuestoId: 'bosch', cantidad: 1 }] },
+      const lineasVendidas = [{ repuestoId: 'monroe', cantidad: 2 }, { repuestoId: 'bosch', cantidad: 1 }];
+      expect(stock.reservas).toEqual([{ bodega: 'PRINCIPAL', referencia: 'OT-0054', lineas: lineasVendidas }]);
+      // La venta sale de lo reservado, a nombre de facturación; nada se libera.
+      expect(ventas.registradas).toEqual([
+        { clienteId: 'cliente-facturacion', codigoOrden: 'OT-0054', vin: null, bodega: 'PRINCIPAL', observaciones: 'Orden de taller OT-0054', lineas: lineasVendidas },
       ]);
+      expect(p.ventas).toEqual([{ id: 'venta-1', numero: 'V-000001', bodega: 'PRINCIPAL', total: 100 }]);
+      expect(stock.liberaciones).toEqual([]);
+      expect(pedidos.filas.get('OT-0054')?.estado).toBe(EstadoPedido.DESPACHADO);
     });
 
     it('con una sola unidad pedida, la más barata (KYB) sí alcanza', async () => {
-      const p = await apartar('m', [{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 1 }]);
+      const p = await despachar('m', [{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 1 }]);
       expect(p.lineas[0].sku).toBe('KYB-AMO-DEL-GAS');
     });
 
-    it('rechaza un código que no manejamos y uno que no alcanza en una misma bodega', async () => {
-      await expect(apartar('m', [{ codigoUniversal: 'XYZ-1', cantidad: 1 }])).rejects.toThrow(NotFoundError);
+    it('una venta por bodega', async () => {
+      repuestos.catalogo.set('FIL-ACE-STD', [{ id: 'mann', sku: 'MAN', nombre: 'Filtro', precio: 1 }]);
+      stock.poner('mann', 'NORTE', 5);
+      const p = await despachar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }, { codigoUniversal: 'FIL-ACE-STD', cantidad: 2 }]);
+      expect(ventas.registradas.map((v) => v.bodega)).toEqual(['PRINCIPAL', 'NORTE']);
+      expect(p.ventas).toHaveLength(2);
+    });
+
+    it('rechaza un código que no manejamos y uno que no alcanza en una misma bodega, sin vender nada', async () => {
+      await expect(despachar('m', [{ codigoUniversal: 'XYZ-1', cantidad: 1 }])).rejects.toThrow(NotFoundError);
       stock.poner('monroe', 'NORTE', 3);
-      await expect(apartar('m', [{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 7 }])).rejects.toThrow('en una misma bodega (como máximo hay 6)');
+      await expect(despachar('m', [{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 7 }])).rejects.toThrow('en una misma bodega (como máximo hay 6)');
       expect(stock.reservas).toEqual([]);
+      expect(ventas.registradas).toEqual([]);
     });
 
     it('valida las líneas: al menos una, sin repetir, cantidades enteras positivas, e id_mensaje obligatorio', async () => {
-      await expect(apartar('m', [])).rejects.toThrow('al menos un repuesto');
-      await expect(apartar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }, { codigoUniversal: 'pas-del-cer', cantidad: 1 }])).rejects.toThrow('repetido');
-      await expect(apartar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 0 }])).rejects.toThrow(ValidationDomainError);
-      await expect(apartar(' ')).rejects.toThrow('id_mensaje');
+      await expect(despachar('m', [])).rejects.toThrow('al menos un repuesto');
+      await expect(despachar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }, { codigoUniversal: 'pas-del-cer', cantidad: 1 }])).rejects.toThrow('repetido');
+      await expect(despachar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 0 }])).rejects.toThrow(ValidationDomainError);
+      await expect(despachar(' ')).rejects.toThrow('id_mensaje');
     });
 
-    it('es todo o nada entre bodegas: si una falla, se libera lo que ya se apartó', async () => {
+    it('es todo o nada entre bodegas al apartar: si una falla, se libera lo apartado y no se vende', async () => {
       repuestos.catalogo.set('FIL-ACE-STD', [{ id: 'mann', sku: 'MAN', nombre: 'Filtro', precio: 1 }]);
       stock.poner('mann', 'NORTE', 5);
       stock.fallarReservaEn = 'NORTE';
 
-      await expect(apartar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }, { codigoUniversal: 'FIL-ACE-STD', cantidad: 1 }])).rejects.toThrow(ConflictError);
+      await expect(despachar('m', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }, { codigoUniversal: 'FIL-ACE-STD', cantidad: 1 }])).rejects.toThrow(ConflictError);
 
       expect(stock.liberaciones).toEqual(stock.reservas);
       expect(stock.reservado.get('bosch|PRINCIPAL')).toBe(0);
       expect(pedidos.filas.size).toBe(0);
+      expect(ventas.registradas).toEqual([]);
     });
 
-    it('un reintento con el mismo id_mensaje devuelve el pedido sin apartar otra vez; otro id_mensaje choca', async () => {
-      await apartar('m-1');
-      const otraVez = await apartar('m-1');
+    it('si la venta falla, el pedido queda APARTADO y el reintento termina sin vender dos veces', async () => {
+      repuestos.catalogo.set('FIL-ACE-STD', [{ id: 'mann', sku: 'MAN', nombre: 'Filtro', precio: 1 }]);
+      stock.poner('mann', 'NORTE', 5);
+      const lineas = [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }, { codigoUniversal: 'FIL-ACE-STD', cantidad: 1 }];
+      const original = ventas.registrarPorCobrar.bind(ventas);
+      jest.spyOn(ventas, 'registrarPorCobrar')
+        .mockImplementationOnce(original)
+        .mockRejectedValueOnce(new Error('la base de datos se cayó'));
 
-      expect(otraVez.estado).toBe(EstadoPedido.APARTADO);
+      await expect(despachar('m-1', lineas)).rejects.toThrow('se cayó');
+      const aMedias = pedidos.filas.get('OT-0054')!;
+      expect(aMedias.estado).toBe(EstadoPedido.APARTADO);
+      expect(aMedias.ventas.map((v) => v.bodega)).toEqual(['PRINCIPAL']);
+
+      const p = await despachar('m-1', lineas);
+      expect(p.estado).toBe(EstadoPedido.DESPACHADO);
+      expect(ventas.registradas.map((v) => v.bodega)).toEqual(['PRINCIPAL', 'NORTE']);
+      expect(stock.reservas).toHaveLength(2); // no se volvió a apartar
+    });
+
+    it('un pedido APARTADO de antes se despacha con lo que tenía apartado', async () => {
+      await pedidos.guardar(
+        new Pedido({
+          id: 'p-viejo', codigoOrden: 'OT-0054', vin: null, estado: EstadoPedido.APARTADO, ventas: [], mensajes: ['viejo'],
+          referenciaPago: null, creadoEn: new Date(), actualizadoEn: new Date(),
+          lineas: [{ codigoUniversal: 'PAS-DEL-CER', repuestoId: 'bosch', sku: 'BOS-PAS-DEL-CER', nombre: 'Pastillas Bosch', bodega: 'PRINCIPAL', precioUnitario: 172050, cantidadApartada: 2, cantidadEntregada: 0 }],
+        }),
+      );
+      const p = await despachar('m-nuevo', [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }]);
+      expect(p.estado).toBe(EstadoPedido.DESPACHADO);
+      expect(ventas.registradas[0].lineas).toEqual([{ repuestoId: 'bosch', cantidad: 2 }]);
+      expect(stock.reservas).toEqual([]);
+    });
+
+    it('un reintento con el mismo id_mensaje no repite nada; otro id_mensaje choca', async () => {
+      await despachar('m-1');
+      const otraVez = await despachar('m-1');
+
+      expect(otraVez.estado).toBe(EstadoPedido.DESPACHADO);
       expect(stock.reservas).toHaveLength(1);
-      await expect(apartar('m-2')).rejects.toThrow('ya tiene un pedido APARTADO');
-    });
-  });
-
-  describe('entregar', () => {
-    const entregar = (usadas: { codigoUniversal: string; cantidad: number }[], idMensaje = 'm-entregar') =>
-      service.entregar({ codigoOrden: 'OT-0054', idMensaje, usadas });
-
-    it('genera la venta por cobrar de lo usado a nombre de facturación y libera lo que sobró', async () => {
-      await apartar();
-
-      const p = await entregar([{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 2 }]);
-
-      expect(p.estado).toBe(EstadoPedido.ENTREGADO);
-      expect(ventas.registradas).toEqual([
-        { clienteId: 'cliente-facturacion', codigoOrden: 'OT-0054', vin: null, bodega: 'PRINCIPAL', observaciones: 'Orden de taller OT-0054', lineas: [{ repuestoId: 'monroe', cantidad: 2 }] },
-      ]);
-      expect(p.ventas).toEqual([{ id: 'venta-1', numero: 'V-000001', bodega: 'PRINCIPAL', total: 100 }]);
-      // Las pastillas no se usaron: vuelven a disponible.
-      expect(stock.liberaciones).toEqual([{ bodega: 'PRINCIPAL', referencia: 'OT-0054', lineas: [{ repuestoId: 'bosch', cantidad: 1 }] }]);
-      expect(p.lineas.map((l) => l.cantidadEntregada)).toEqual([2, 0]);
-    });
-
-    it('si no se usó nada, no hay venta y todo vuelve a disponible', async () => {
-      await apartar();
-      const p = await entregar([]);
-
-      expect(ventas.registradas).toEqual([]);
-      expect(p.ventas).toEqual([]);
-      expect(stock.liberaciones[0].lineas).toHaveLength(2);
-    });
-
-    it('no acepta más de lo apartado ni repuestos que no estaban apartados', async () => {
-      await apartar();
-      await expect(entregar([{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 3 }])).rejects.toThrow('se apartaron 2');
-      await expect(entregar([{ codigoUniversal: 'FIL-ACE-STD', cantidad: 1 }])).rejects.toThrow('no está apartado');
-      expect(ventas.registradas).toEqual([]);
-    });
-
-    it('un reintento no vuelve a vender; sin pedido responde 404', async () => {
-      await expect(entregar([])).rejects.toThrow(NotFoundError);
-      await apartar();
-      await entregar([{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 1 }]);
-      await entregar([{ codigoUniversal: 'AMO-DEL-GAS', cantidad: 1 }]);
       expect(ventas.registradas).toHaveLength(1);
-      await expect(entregar([], 'otro-mensaje')).rejects.toThrow('está ENTREGADO: no se puede entregar');
+      await expect(despachar('m-2')).rejects.toThrow('ya tiene un pedido DESPACHADO');
     });
   });
 
   describe('cancelar', () => {
     const cancelar = (idMensaje = 'm-cancelar') => service.cancelar({ codigoOrden: 'OT-0054', idMensaje });
+    const apartadoViejo = () =>
+      pedidos.guardar(
+        new Pedido({
+          id: 'p-viejo', codigoOrden: 'OT-0054', vin: null, estado: EstadoPedido.APARTADO, ventas: [], mensajes: [],
+          referenciaPago: null, creadoEn: new Date(), actualizadoEn: new Date(),
+          lineas: [{ codigoUniversal: 'PAS-DEL-CER', repuestoId: 'bosch', sku: 'BOS-PAS-DEL-CER', nombre: 'Pastillas Bosch', bodega: 'PRINCIPAL', precioUnitario: 172050, cantidadApartada: 1, cantidadEntregada: 0 }],
+        }),
+      );
 
-    it('libera todo lo apartado; después se puede volver a apartar la misma orden', async () => {
-      await apartar();
+    it('libera lo de un pedido APARTADO; después se puede despachar la misma orden', async () => {
+      await apartadoViejo();
       const p = await cancelar();
 
       expect(p.estado).toBe(EstadoPedido.CANCELADO);
-      expect(stock.reservado.get('monroe|PRINCIPAL')).toBe(0);
-      expect(stock.reservado.get('bosch|PRINCIPAL')).toBe(0);
+      expect(stock.liberaciones).toEqual([{ bodega: 'PRINCIPAL', referencia: 'OT-0054', lineas: [{ repuestoId: 'bosch', cantidad: 1 }] }]);
 
-      const otra = await apartar('m-apartar-2');
-      expect(otra.estado).toBe(EstadoPedido.APARTADO);
+      const otra = await despachar('m-despachar-2');
+      expect(otra.estado).toBe(EstadoPedido.DESPACHADO);
+      expect(otra.ventas).toHaveLength(1);
     });
 
-    it('no se puede cancelar lo ya entregado', async () => {
-      await apartar();
-      await service.entregar({ codigoOrden: 'OT-0054', idMensaje: 'e', usadas: [] });
-      await expect(cancelar()).rejects.toThrow('está ENTREGADO: no se puede cancelar');
+    it('no se puede cancelar lo ya despachado (tiene factura)', async () => {
+      await despachar();
+      await expect(cancelar()).rejects.toThrow('está DESPACHADO: no se puede cancelar');
     });
   });
 
-  describe('registrar pago', () => {
+  describe('registrar pago (lo hace facturación)', () => {
     const pagar = (idMensaje = 'm-pago', referenciaPago = 'PSE-1') =>
       service.registrarPago({ codigoOrden: 'OT-0054', idMensaje, referenciaPago });
 
-    it('marca pagadas las ventas del pedido', async () => {
-      await apartar();
-      await service.entregar({ codigoOrden: 'OT-0054', idMensaje: 'e', usadas: [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }] });
+    it('marca pagadas las ventas del pedido despachado; un reintento no paga dos veces', async () => {
+      await despachar();
 
       const p = await pagar();
       await pagar();
@@ -251,11 +263,11 @@ describe('PedidosService', () => {
       expect(ventas.pagadas).toEqual([{ ventaId: 'venta-1', referencia: 'PSE-1' }]);
     });
 
-    it('solo se paga un pedido entregado y con algo que cobrar', async () => {
-      await apartar();
-      await expect(pagar()).rejects.toThrow('está APARTADO: no se puede pagar');
-      await service.entregar({ codigoOrden: 'OT-0054', idMensaje: 'e', usadas: [] });
-      await expect(pagar()).rejects.toThrow('no hay nada que cobrar');
+    it('solo se paga un pedido DESPACHADO; sin pedido responde 404', async () => {
+      await expect(pagar()).rejects.toThrow(NotFoundError);
+      await despachar();
+      await pagar();
+      await expect(pagar('otro-pago')).rejects.toThrow('está PAGADO: no se puede pagar');
     });
   });
 
@@ -263,23 +275,15 @@ describe('PedidosService', () => {
     const VIN = '3MZBP2SM1SM600006';
     const lineas = [{ codigoUniversal: 'PAS-DEL-CER', cantidad: 1 }];
 
-    it('el VIN de apartar y la orden pasan a la venta al entregar', async () => {
-      await service.apartar({ codigoOrden: 'OT-1', idMensaje: 'a', vin: ' 3mzbp2sm1sm600006 ', lineas });
-      await service.entregar({ codigoOrden: 'OT-1', idMensaje: 'b', usadas: lineas });
-
+    it('el VIN y la orden pasan a la venta', async () => {
+      await service.despachar({ codigoOrden: 'OT-1', idMensaje: 'a', vin: ' 3mzbp2sm1sm600006 ', lineas });
       expect(ventas.registradas[0]).toMatchObject({ vin: VIN, codigoOrden: 'OT-1' });
     });
 
-    it('el VIN también se puede enviar al entregar', async () => {
-      await service.apartar({ codigoOrden: 'OT-1', idMensaje: 'a', lineas });
-      await service.entregar({ codigoOrden: 'OT-1', idMensaje: 'b', vin: VIN, usadas: lineas });
-
-      expect(ventas.registradas[0].vin).toBe(VIN);
-    });
-
-    it('un VIN mal formado no aparta nada', async () => {
-      await expect(service.apartar({ codigoOrden: 'OT-1', idMensaje: 'a', vin: 'ABC', lineas })).rejects.toThrow('17');
+    it('un VIN mal formado no aparta ni vende nada', async () => {
+      await expect(service.despachar({ codigoOrden: 'OT-1', idMensaje: 'a', vin: 'ABC', lineas })).rejects.toThrow('17');
       expect(stock.reservas).toEqual([]);
+      expect(ventas.registradas).toEqual([]);
     });
   });
 });

@@ -11,17 +11,11 @@ interface ConOrden {
   idMensaje: string;
 }
 
-export interface ApartarPedidoCommand extends ConOrden {
-  /** VIN del vehículo de la orden. */
+/** El cliente aceptó la cotización: se aparta y se despacha (venta por cobrar) en un solo paso. */
+export interface DespacharPedidoCommand extends ConOrden {
+  /** VIN del vehículo de la orden: pasa a la venta (garantía de AutoMax). */
   vin?: string | null;
   lineas: LineaCodigoCommand[];
-}
-
-export interface EntregarPedidoCommand extends ConOrden {
-  /** Si no se envió al apartar, o para corregirlo. */
-  vin?: string | null;
-  /** Lo que realmente usó el taller. Lo que no venga se toma como 0 usados (vuelve a disponible). */
-  usadas: LineaCodigoCommand[];
 }
 
 export interface CancelarPedidoCommand extends ConOrden {

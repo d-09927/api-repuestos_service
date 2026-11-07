@@ -33,8 +33,7 @@ const ESCRITURA = [
   'liberar_reserva',
   'registrar_venta',
   'registrar_compra',
-  'apartar_para_orden',
-  'entregar_orden',
+  'despachar_orden',
   'cancelar_orden',
   'registrar_pago_orden',
 ];
@@ -193,56 +192,52 @@ describe('MCP de repuestos (punta a punta)', () => {
       await crear('stock/entradas', { repuestoId: r.id, bodega: 'PRINCIPAL', cantidad: 5, referencia: 'E2E' });
     });
 
-    it('apartar → entregar (venta por cobrar de lo usado, libera el sobrante) → pagar', async () => {
-      const apartado = await llamar(cliente, 'apartar_para_orden', {
-        codigo_orden: orden, lineas: [{ codigo_repuesto: codigo, cantidad: 3 }], id_mensaje: `${orden}-apartar`,
-      });
-      expect(apartado.isError).toBe(false);
-      expect(apartado.datos).toMatchObject({ codigo_orden: orden, estado: 'APARTADO', lineas: [{ cantidad_apartada: 3, precio_unitario: 100000 }] });
-      expect(await stockDe()).toEqual({ fisico: 5, reservada: 3 });
+    type Venta = { numero: string; estado: string; referenciaPago: string | null };
+    const ventaNumero = async (numero: string) =>
+      ((await (await fetch(`${BASE}/api/ventas?limite=100`)).json()) as { items: Venta[] }).items.find((v) => v.numero === numero);
 
-      // Reintento con el mismo id_mensaje: no aparta otra vez.
-      await llamar(cliente, 'apartar_para_orden', {
-        codigo_orden: orden, lineas: [{ codigo_repuesto: codigo, cantidad: 3 }], id_mensaje: `${orden}-apartar`,
+    it('el cliente aceptó → DESPACHADO con factura PENDIENTE_PAGO → facturación paga → PAGADO', async () => {
+      const despachado = await llamar(cliente, 'despachar_orden', {
+        codigo_orden: orden, lineas: [{ codigo_repuesto: codigo, cantidad: 3 }], id_mensaje: `${orden}-despachar`,
       });
-      expect(await stockDe()).toEqual({ fisico: 5, reservada: 3 });
+      expect(despachado.isError).toBe(false);
+      expect(despachado.datos).toMatchObject({
+        codigo_orden: orden,
+        estado: 'DESPACHADO',
+        lineas: [{ cantidad_apartada: 3, cantidad_entregada: 3, precio_unitario: 100000 }],
+        total_a_cobrar_con_iva: 357000,
+        total_a_cobrar_sin_iva: 300000,
+      });
+      const numero = despachado.datos.ventas[0].numero;
+      expect(numero).toMatch(/^V-\d{6}$/);
+      expect(await ventaNumero(numero)).toMatchObject({ estado: 'PENDIENTE_PAGO', referenciaPago: null });
+      // Salieron 3 del físico y no queda nada reservado.
+      expect(await stockDe()).toEqual({ fisico: 2, reservada: 0 });
 
-      const entregado = await llamar(cliente, 'entregar_orden', {
-        codigo_orden: orden, usadas: [{ codigo_repuesto: codigo, cantidad: 2 }], id_mensaje: `${orden}-entregar`,
+      // Reintento con el mismo id_mensaje: no despacha ni factura otra vez.
+      await llamar(cliente, 'despachar_orden', {
+        codigo_orden: orden, lineas: [{ codigo_repuesto: codigo, cantidad: 3 }], id_mensaje: `${orden}-despachar`,
       });
-      expect(entregado.datos).toMatchObject({
-        estado: 'ENTREGADO',
-        lineas: [{ cantidad_entregada: 2 }],
-        total_a_cobrar_con_iva: 238000,
-        total_a_cobrar_sin_iva: 200000,
-      });
-      expect(entregado.datos.ventas[0].numero).toMatch(/^V-\d{6}$/);
-      // Salieron 2 de lo reservado y la que sobró volvió a disponible.
-      expect(await stockDe()).toEqual({ fisico: 3, reservada: 0 });
+      expect(await stockDe()).toEqual({ fisico: 2, reservada: 0 });
+
+      // Despachado ya tiene factura: no se cancela.
+      const cancelar = await llamar(cliente, 'cancelar_orden', { codigo_orden: orden, id_mensaje: `${orden}-c` });
+      expect(cancelar.isError).toBe(true);
 
       const pagado = await llamar(cliente, 'registrar_pago_orden', {
         codigo_orden: orden, referencia_pago: 'PSE-E2E', id_mensaje: `${orden}-pago`,
       });
       expect(pagado.datos).toMatchObject({ estado: 'PAGADO', referencia_pago: 'PSE-E2E' });
-
-      const ventas = (await (await fetch(`${BASE}/api/ventas?limite=100`)).json()) as { items: { numero: string; estado: string; referenciaPago: string }[] };
-      expect(ventas.items.find((v) => v.numero === entregado.datos.ventas[0].numero)).toMatchObject({ estado: 'PAGADA', referenciaPago: 'PSE-E2E' });
+      expect(await ventaNumero(numero)).toMatchObject({ estado: 'PAGADA', referenciaPago: 'PSE-E2E' });
     });
 
-    it('cancelar libera todo; no se puede apartar más de lo que hay en una bodega', async () => {
-      const otra = `${orden}-C`;
-      await llamar(cliente, 'apartar_para_orden', { codigo_orden: otra, lineas: [{ codigo_repuesto: codigo, cantidad: 2 }], id_mensaje: `${otra}-a` });
-      expect((await stockDe()).reservada).toBe(2);
-
-      const cancelado = await llamar(cliente, 'cancelar_orden', { codigo_orden: otra, id_mensaje: `${otra}-c` });
-      expect(cancelado.datos.estado).toBe('CANCELADO');
-      expect((await stockDe()).reservada).toBe(0);
-
-      const demasiado = await llamar(cliente, 'apartar_para_orden', {
+    it('no se despacha más de lo que hay en una bodega, y no se toca nada', async () => {
+      const demasiado = await llamar(cliente, 'despachar_orden', {
         codigo_orden: `${orden}-X`, lineas: [{ codigo_repuesto: codigo, cantidad: 99 }], id_mensaje: `${orden}-x`,
       });
       expect(demasiado.isError).toBe(true);
       expect(demasiado.texto).toMatch(/en una misma bodega/);
+      expect(await stockDe()).toEqual({ fisico: 2, reservada: 0 });
     });
   });
 

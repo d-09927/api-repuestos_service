@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de repuestos</title>
+<style>
+  :root {
+    --fondo: #f5f6f8; --panel: #ffffff; --texto: #1c2430; --tenue: #5f6b7a; --borde: #dfe3e8;
+    --acento: #2459c9; --acento-suave: #e6edfb;
+    --ok: #1d7a46; --ok-suave: #e3f4ea; --alerta: #a15c00; --alerta-suave: #fdf0dc;
+    --peligro: #b3261e; --peligro-suave: #fbe5e3; --neutro-suave: #eceff3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --fondo: #12161c; --panel: #1b2129; --texto: #e6eaf0; --tenue: #95a1b0; --borde: #2c3440;
+      --acento: #7aa2ff; --acento-suave: #1f2c46;
+      --ok: #5fd08e; --ok-suave: #173326; --alerta: #f0b25a; --alerta-suave: #3a2c15;
+      --peligro: #ff8a80; --peligro-suave: #3d1d1b; --neutro-suave: #262d37;
+    }
+  }
+  :root[data-theme="dark"] {
+    --fondo: #12161c; --panel: #1b2129; --texto: #e6eaf0; --tenue: #95a1b0; --borde: #2c3440;
+    --acento: #7aa2ff; --acento-suave: #1f2c46;
+    --ok: #5fd08e; --ok-suave: #173326; --alerta: #f0b25a; --alerta-suave: #3a2c15;
+    --peligro: #ff8a80; --peligro-suave: #3d1d1b; --neutro-suave: #262d37;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+    padding: 14px 16px; background: var(--panel); border-bottom: 1px solid var(--borde); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 18px; margin: 0; }
+  .sub { color: var(--tenue); font-size: 12px; }
+  .controles { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button, select, input { font: inherit; color: var(--texto); background: var(--panel);
+    border: 1px solid var(--borde); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button.primario { background: var(--acento); color: #fff; border-color: var(--acento); }
+  nav { display: flex; gap: 4px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--borde); overflow-x: auto; }
+  nav button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 12px; color: var(--tenue); white-space: nowrap; background: none; }
+  nav button.activa { color: var(--acento); border-bottom-color: var(--acento); font-weight: 600; }
+  main { padding: 16px; max-width: 1280px; margin: 0 auto; }
+  .tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; }
+  .tarjeta .etq { color: var(--tenue); font-size: 12px; }
+  .tarjeta .valor { font-size: 22px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tarjeta .nota { color: var(--tenue); font-size: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; margin-bottom: 16px; }
+  .panel h2 { font-size: 15px; margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--borde);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filtros { display: flex; gap: 8px; flex-wrap: wrap; font-weight: normal; }
+  .tabla { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { color: var(--tenue); font-weight: 600; font-size: 12px; background: var(--panel); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.fila { cursor: pointer; }
+  tr.fila:hover td { background: var(--acento-suave); }
+  tr.detalle td { background: var(--fondo); }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .c-ok { background: var(--ok-suave); color: var(--ok); }
+  .c-alerta { background: var(--alerta-suave); color: var(--alerta); }
+  .c-peligro { background: var(--peligro-suave); color: var(--peligro); }
+  .c-info { background: var(--acento-suave); color: var(--acento); }
+  .c-neutro { background: var(--neutro-suave); color: var(--tenue); }
+  .vacio { padding: 18px 14px; color: var(--tenue); }
+  pre { margin: 0; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto;
+    font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; }
+  .bloques { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; padding: 8px 0; }
+  .bloques h3 { margin: 0 0 4px; font-size: 12px; color: var(--tenue); }
+  .corto { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .error { margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: var(--peligro-suave); color: var(--peligro); }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .barras { padding: 12px 14px; display: grid; gap: 8px; }
+  .barra { display: grid; grid-template-columns: 110px 1fr 120px; gap: 8px; align-items: center; font-size: 13px; }
+  .barra .pista { background: var(--neutro-suave); border-radius: 4px; height: 12px; overflow: hidden; }
+  .barra .relleno { height: 100%; background: var(--acento); }
+  .barra .cifra { text-align: right; font-variant-numeric: tabular-nums; color: var(--tenue); }
+  .dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 600px) { .barra { grid-template-columns: 80px 1fr 90px; } .dos { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Monitor de repuestos</h1>
+    <div class="sub" id="estadoCarga">Cargando…</div>
+  </div>
+  <div class="controles">
+    <label class="sub"><input type="checkbox" id="auto" checked> Actualizar cada 30 s</label>
+    <button class="primario" id="recargar">Actualizar</button>
+    <button id="tema" title="Cambiar tema">◐</button>
+  </div>
+</header>
+<nav id="pestanas">
+  <button data-vista="resumen" class="activa">Resumen</button>
+  <button data-vista="facturas">Facturas</button>
+  <button data-vista="cotizaciones">Cotizaciones</button>
+  <button data-vista="ordenes">Órdenes de taller</button>
+  <button data-vista="movimientos">Movimientos</button>
+  <button data-vista="compras">Compras</button>
+  <button data-vista="stock">Stock bajo</button>
+  <button data-vista="logs">Logs MCP</button>
+</nav>
+<main>
+  <div id="error" class="error" hidden></div>
+
+  <!-- RESUMEN -->
+  <section data-vista="resumen">
+    <div class="tarjetas" id="kpis"></div>
+    <div class="dos">
+      <div class="panel"><h2>Ventas de los últimos 14 días</h2><div class="barras" id="graficoDias"></div></div>
+      <div class="panel"><h2>Órdenes de taller por estado</h2><div class="barras" id="graficoOrdenes"></div></div>
+    </div>
+    <div class="panel"><h2>Por cobrar (ventas pendientes de pago)</h2><div class="tabla" id="tablaPorCobrar"></div></div>
+  </section>
+
+  <!-- FACTURAS -->
+  <section data-vista="facturas" hidden>
+    <div class="panel">
+      <h2>Facturas de venta
+        <span class="filtros">
+          <input id="fBuscar" placeholder="Número, orden, VIN, cliente…">
+          <select id="fEstado"><option value="">Todos los estados</option><option value="PAGADA">Pagada</option><option value="PENDIENTE_PAGO">Pendiente de pago</option></select>
+          <select id="fBodega"><option value="">Todas las bodegas</option></select>
+        </span>
+      </h2>
+      <div class="tabla" id="tablaFacturas"></div>
+    </div>
+  </section>
+
+  <!-- COTIZACIONES -->
+  <section data-vista="cotizaciones" hidden>
+    <div class="tarjetas" id="kpisCotizaciones"></div>
+    <div class="panel">
+      <h2>Cotizaciones (consultar_precio_repuesto)
+        <span class="filtros">
+          <input id="qBuscar" placeholder="Código, repuesto, marca…">
+          <select id="qResultado"><option value="">Todos los resultados</option><option value="SI">Disponible</option><option value="NO">Sin unidades suficientes</option><option value="NM">No lo manejamos</option><option value="ERR">Error</option></select>
+          <select id="qLlamante"><option value="">Todos los llamantes</option><option value="AGENTE">Nuestro agente</option><option value="EXTERNO">Externo</option></select>
+        </span>
+      </h2>
+      <div class="tabla" id="tablaCotizaciones"></div>
+    </div>
+  </section>
+
+  <!-- LOGS MCP -->
+  <section data-vista="logs" hidden>
+    <div class="tarjetas" id="kpisLogs"></div>
+    <div class="panel">
+      <h2>Llamadas al MCP
+        <span class="filtros">
+          <input id="lBuscar" placeholder="Argumentos o resultado…">
+          <select id="lHerramienta"><option value="">Todas las herramientas</option></select>
+          <select id="lLlamante"><option value="">Todos los llamantes</option><option value="AGENTE">Nuestro agente</option><option value="EXTERNO">Externo</option><option value="AUTOMAX">AutoMax</option></select>
+          <label class="sub"><input type="checkbox" id="lErrores"> Solo errores</label>
+        </span>
+      </h2>
+      <div class="tabla" id="tablaLogs"></div>
+    </div>
+  </section>
+
+  <!-- ÓRDENES -->
+  <section data-vista="ordenes" hidden>
+    <div class="panel">
+      <h2>Órdenes de taller (pedidos)
+        <span class="filtros">
+          <input id="oBuscar" placeholder="Orden o VIN…">
+          <select id="oEstado"><option value="">Todos los estados</option><option>DESPACHADO</option><option>APARTADO</option><option>PAGADO</option><option>CANCELADO</option></select>
+        </span>
+      </h2>
+      <div class="tabla" id="tablaOrdenes"></div>
+    </div>
+  </section>
+
+  <!-- MOVIMIENTOS -->
+  <section data-vista="movimientos" hidden>
+    <div class="panel">
+      <h2>Movimientos de inventario
+        <span class="filtros">
+          <input id="mBuscar" placeholder="Repuesto, referencia…">
+          <select id="mTipo"><option value="">Todos los tipos</option><option>ENTRADA</option><option>SALIDA</option><option>AJUSTE</option><option>RESERVA</option><option>LIBERACION</option></select>
+          <select id="mBodega"><option value="">Todas las bodegas</option></select>
+        </span>
+      </h2>
+      <div class="tabla" id="tablaMovimientos"></div>
+    </div>
+  </section>
+
+  <!-- COMPRAS -->
+  <section data-vista="compras" hidden>
+    <div class="panel">
+      <h2>Compras a proveedores <span class="filtros"><input id="cBuscar" placeholder="Número, proveedor, factura…"></span></h2>
+      <div class="tabla" id="tablaCompras"></div>
+    </div>
+  </section>
+
+  <!-- STOCK -->
+  <section data-vista="stock" hidden>
+    <div class="panel"><h2>Repuestos bajo el mínimo</h2><div class="tabla" id="tablaStock"></div></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+// Lee la misma API que sirve esta página (GET de solo lectura). No cambia nada en la base de datos.
+const API = '/api';
+const MAX_PAGINAS = 10; // hasta 1000 registros por listado
+const datos = { ventas: [], pedidos: [], movimientos: [], compras: [], stockBajo: [], bitacora: [], cotizaciones: [], repuestos: new Map(), clientes: new Map(), proveedores: new Map() };
+const PAGINAS_BITACORA = 5; // las 500 llamadas más recientes
+const abiertos = new Set();
+
+const pesos = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+const fechaHora = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
+const diaCorto = new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', timeZone: 'America/Bogota' });
+const diaClave = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }); // AAAA-MM-DD
+
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = (n) => pesos.format(Number(n) || 0);
+const fecha = (f) => (f ? fechaHora.format(new Date(f)) : '—');
+
+const CHIPS = {
+  PAGADA: ['Pagada', 'c-ok'], PENDIENTE_PAGO: ['Pendiente de pago', 'c-alerta'],
+  APARTADO: ['Apartado', 'c-info'], DESPACHADO: ['Despachado · por cobrar', 'c-alerta'], PAGADO: ['Pagado', 'c-ok'], CANCELADO: ['Cancelado', 'c-neutro'],
+  AGENTE: ['Nuestro agente', 'c-info'], EXTERNO: ['Externo', 'c-neutro'], AUTOMAX: ['AutoMax', 'c-alerta'],
+  OK: ['OK', 'c-ok'], ERROR: ['Error', 'c-peligro'],
+  SI: ['Disponible', 'c-ok'], NO: ['Insuficiente', 'c-alerta'], NM: ['No lo manejamos', 'c-neutro'], ERR: ['Error', 'c-peligro'],
+  ENTRADA: ['Entrada', 'c-ok'], SALIDA: ['Salida', 'c-peligro'], AJUSTE: ['Ajuste', 'c-neutro'], RESERVA: ['Reserva', 'c-info'], LIBERACION: ['Liberación', 'c-alerta'],
+};
+const chip = (v) => { const [t, c] = CHIPS[v] ?? [v, 'c-neutro']; return `<span class="chip ${c}">${esc(t)}</span>`; };
+
+async function pedir(ruta) {
+  const r = await fetch(API + ruta);
+  if (!r.ok) throw new Error(`${ruta} respondió ${r.status}`);
+  return r.json();
+}
+async function todas(ruta, maxPaginas = MAX_PAGINAS) {
+  const sep = ruta.includes('?') ? '&' : '?';
+  const items = [];
+  for (let p = 1; p <= maxPaginas; p++) {
+    const pag = await pedir(`${ruta}${sep}limite=100&pagina=${p}`);
+    items.push(...pag.items);
+    if (items.length >= pag.total || pag.items.length === 0) break;
+  }
+  return items;
+}
+
+async function cargar() {
+  $('#estadoCarga').textContent = 'Actualizando…';
+  try {
+    const [ventas, pedidos, movimientos, compras, stockBajo, repuestos, clientes, proveedores, bitacora, cotizaciones] = await Promise.all([
+      todas('/ventas'), pedir('/pedidos'), todas('/stock/movimientos'), todas('/compras'), pedir('/stock/stock-bajo'),
+      todas('/repuestos?incluirInactivos=true'), todas('/clientes?incluirInactivos=true'), todas('/proveedores?incluirInactivos=true'),
+      todas('/bitacora', PAGINAS_BITACORA), todas('/bitacora?herramienta=consultar_precio_repuesto', PAGINAS_BITACORA),
+    ]);
+    Object.assign(datos, { ventas, pedidos, movimientos, compras, stockBajo, bitacora, cotizaciones: cotizaciones.map(leerCotizacion) });
+    datos.repuestos = new Map(repuestos.map((r) => [r.id, r]));
+    datos.clientes = new Map(clientes.map((c) => [c.id, c]));
+    datos.proveedores = new Map(proveedores.map((p) => [p.id, p]));
+    $('#error').hidden = true;
+    llenarBodegas();
+    pintar();
+    $('#estadoCarga').textContent = `Actualizado ${fechaHora.format(new Date())}`;
+  } catch (e) {
+    $('#error').hidden = false;
+    $('#error').textContent = `No se pudo leer la API: ${e.message}. ¿Está levantada?`;
+    $('#estadoCarga').textContent = 'Sin conexión';
+  }
+}
+
+const json = (texto) => { try { return JSON.parse(texto); } catch { return null; } };
+const bonito = (v) => (typeof v === 'string' ? (json(v) ? JSON.stringify(json(v), null, 2) : v) : JSON.stringify(v, null, 2));
+
+/** Una llamada a consultar_precio_repuesto convertida en cotización. */
+function leerCotizacion(l) {
+  const r = l.esError ? null : json(l.resultado);
+  const resultado = l.esError || !r ? 'ERR' : r.precio_unitario == null ? 'NM' : r.disponible ? 'SI' : 'NO';
+  const cantidad = r?.cantidad ?? l.argumentos?.cantidad ?? 0;
+  return {
+    llamada: l, r, resultado, cantidad,
+    codigo: r?.codigo_repuesto ?? String(l.argumentos?.codigo_repuesto ?? '').toUpperCase(),
+    total: r?.precio_unitario != null ? r.precio_unitario * cantidad : 0,
+  };
+}
+
+function llenarHerramientas() {
+  const sel = $('#lHerramienta'), actual = sel.value;
+  const nombres = [...new Set(datos.bitacora.map((l) => l.herramienta))].sort();
+  sel.innerHTML = '<option value="">Todas las herramientas</option>' + nombres.map((n) => `<option>${esc(n)}</option>`).join('');
+  sel.value = nombres.includes(actual) ? actual : '';
+}
+
+function llenarBodegas() {
+  llenarHerramientas();
+  const bodegas = [...new Set([...datos.ventas.map((v) => v.bodega), ...datos.movimientos.map((m) => m.bodega)])].sort();
+  for (const sel of [$('#fBodega'), $('#mBodega')]) {
+    const actual = sel.value;
+    sel.innerHTML = '<option value="">Todas las bodegas</option>' + bodegas.map((b) => `<option>${esc(b)}</option>`).join('');
+    sel.value = bodegas.includes(actual) ? actual : '';
+  }
+}
+
+const nombreCliente = (id) => (id ? datos.clientes.get(id)?.nombre ?? id.slice(0, 8) : 'Mostrador');
+const nombreProveedor = (id) => datos.proveedores.get(id)?.nombre ?? id?.slice(0, 8) ?? '—';
+const nombreRepuesto = (id) => { const r = datos.repuestos.get(id); return r ? `${r.nombre} <span class="mono sub">${esc(r.sku)}</span>` : `<span class="mono">${esc(id?.slice(0, 8))}</span>`; };
+const coincide = (texto, ...campos) => !texto || campos.some((c) => String(c ?? '').toLowerCase().includes(texto));
+
+function tabla(columnas, filas, vacio = 'No hay registros.') {
+  if (!filas.length) return `<div class="vacio">${vacio}</div>`;
+  const cab = columnas.map(([t, num]) => `<th class="${num ? 'num' : ''}">${t}</th>`).join('');
+  return `<table><thead><tr>${cab}</tr></thead><tbody>${filas.join('')}</tbody></table>`;
+}
+
+function barras(lista) {
+  const max = Math.max(1, ...lista.map((x) => x.valor));
+  return lista.map((x) => `<div class="barra"><span>${esc(x.etq)}</span><div class="pista"><div class="relleno" style="width:${(x.valor / max) * 100}%"></div></div><span class="cifra">${esc(x.texto)}</span></div>`).join('');
+}
+
+function pintarResumen() {
+  const hoy = diaClave.format(new Date());
+  const pagadas = datos.ventas.filter((v) => v.estado === 'PAGADA');
+  const pendientes = datos.ventas.filter((v) => v.estado === 'PENDIENTE_PAGO');
+  const deHoy = datos.ventas.filter((v) => diaClave.format(new Date(v.fecha)) === hoy);
+  const suma = (l, k = 'total') => l.reduce((t, x) => t + Number(x[k] || 0), 0);
+  const abiertas = datos.pedidos.filter((p) => p.estado === 'APARTADO' || p.estado === 'DESPACHADO');
+  const kpis = [
+    ['Ventas de hoy', dinero(suma(deHoy)), `${deHoy.length} factura(s)`],
+    ['Cobrado (total)', dinero(suma(pagadas)), `${pagadas.length} factura(s) pagadas`],
+    ['Por cobrar', dinero(suma(pendientes)), `${pendientes.length} factura(s) pendientes`],
+    ['Órdenes abiertas', abiertas.length, 'despachadas sin pagar o apartadas'],
+    ['Compras (total)', dinero(suma(datos.compras)), `${datos.compras.length} compra(s)`],
+    ['Stock bajo', datos.stockBajo.length, 'repuestos por reponer'],
+  ];
+  $('#kpis').innerHTML = kpis.map(([e, v, n]) => `<div class="tarjeta"><div class="etq">${e}</div><div class="valor">${esc(v)}</div><div class="nota">${esc(n)}</div></div>`).join('');
+
+  const dias = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const clave = diaClave.format(d);
+    const total = suma(datos.ventas.filter((v) => diaClave.format(new Date(v.fecha)) === clave));
+    dias.push({ etq: diaCorto.format(d), valor: total, texto: dinero(total) });
+  }
+  $('#graficoDias').innerHTML = barras(dias);
+
+  $('#graficoOrdenes').innerHTML = barras(['APARTADO', 'DESPACHADO', 'PAGADO', 'CANCELADO'].map((e) => {
+    const n = datos.pedidos.filter((p) => p.estado === e).length;
+    return { etq: CHIPS[e][0], valor: n, texto: `${n}` };
+  }));
+
+  $('#tablaPorCobrar').innerHTML = tabla(
+    [['Factura'], ['Orden'], ['Cliente'], ['Fecha'], ['Total', 1]],
+    pendientes.map((v) => `<tr><td class="mono">${esc(v.numero)}</td><td class="mono">${esc(v.codigoOrden ?? '—')}</td><td>${esc(nombreCliente(v.clienteId))}</td><td>${fecha(v.fecha)}</td><td class="num">${dinero(v.total)}</td></tr>`),
+    'No hay facturas pendientes de pago.',
+  );
+}
+
+function filaDetalle(id, cols, html) {
+  return abiertos.has(id) ? `<tr class="detalle"><td colspan="${cols}">${html}</td></tr>` : '';
+}
+
+function pintarFacturas() {
+  const t = $('#fBuscar').value.trim().toLowerCase(), e = $('#fEstado').value, b = $('#fBodega').value;
+  const lista = datos.ventas.filter((v) => (!e || v.estado === e) && (!b || v.bodega === b) &&
+    coincide(t, v.numero, v.codigoOrden, v.vin, v.referenciaPago, nombreCliente(v.clienteId)));
+  $('#tablaFacturas').innerHTML = tabla(
+    [['Factura'], ['Fecha'], ['Cliente'], ['Orden / VIN'], ['Bodega'], ['Estado'], ['Pago'], ['Total', 1]],
+    lista.map((v) => `<tr class="fila" data-id="${v.id}"><td class="mono">${esc(v.numero)}</td><td>${fecha(v.fecha)}</td><td>${esc(nombreCliente(v.clienteId))}</td>
+      <td class="mono">${esc(v.codigoOrden ?? '')}${v.vin ? `<div class="sub">${esc(v.vin)}</div>` : ''}${!v.codigoOrden && !v.vin ? '—' : ''}</td>
+      <td>${esc(v.bodega)}</td><td>${chip(v.estado)}</td><td>${v.pagadaEn ? fecha(v.pagadaEn) : '—'}${v.referenciaPago ? `<div class="sub mono">${esc(v.referenciaPago)}</div>` : ''}</td>
+      <td class="num">${dinero(v.total)}</td></tr>` + filaDetalle(v.id, 8, tabla(
+        [['Repuesto'], ['Código universal'], ['Categoría'], ['Cant.', 1], ['Precio', 1], ['Subtotal', 1]],
+        v.detalles.map((d) => `<tr><td>${esc(d.nombre)} <span class="mono sub">${esc(d.sku)}</span></td><td class="mono">${esc(d.codigoUniversal ?? '—')}</td><td>${esc(d.categoria ?? '—')}</td><td class="num">${d.cantidad}</td><td class="num">${dinero(d.precioUnitario)}</td><td class="num">${dinero(d.subtotal)}</td></tr>`),
+      ) + (v.observaciones ? `<div class="sub" style="padding:8px 12px">${esc(v.observaciones)}</div>` : ''))),
+    'No hay facturas con esos filtros.',
+  );
+}
+
+function pintarOrdenes() {
+  const t = $('#oBuscar').value.trim().toLowerCase(), e = $('#oEstado').value;
+  const lista = datos.pedidos.filter((p) => (!e || p.estado === e) && coincide(t, p.codigoOrden, p.vin, p.referenciaPago));
+  $('#tablaOrdenes').innerHTML = tabla(
+    [['Orden'], ['VIN'], ['Estado'], ['Repuestos', 1], ['Facturas'], ['Pago'], ['Actualizado'], ['Total', 1]],
+    lista.map((p) => {
+      const total = p.ventas.length ? p.ventas.reduce((s, v) => s + Number(v.total), 0) : p.lineas.reduce((s, l) => s + l.precioUnitario * l.cantidadApartada, 0);
+      const unidades = p.lineas.reduce((s, l) => s + l.cantidadApartada, 0);
+      return `<tr class="fila" data-id="${p.id}"><td class="mono">${esc(p.codigoOrden)}</td><td class="mono">${esc(p.vin ?? '—')}</td><td>${chip(p.estado)}</td>
+        <td class="num">${unidades}</td><td class="mono">${p.ventas.map((v) => esc(v.numero)).join(', ') || '—'}</td>
+        <td class="mono">${esc(p.referenciaPago ?? '—')}</td><td>${fecha(p.actualizadoEn)}</td><td class="num">${dinero(total)}${p.ventas.length ? '' : '<div class="sub">estimado</div>'}</td></tr>` +
+        filaDetalle(p.id, 8, tabla(
+          [['Repuesto'], ['Código universal'], ['Bodega'], ['Apartada', 1], ['Entregada', 1], ['Precio', 1]],
+          p.lineas.map((l) => `<tr><td>${esc(l.nombre)} <span class="mono sub">${esc(l.sku)}</span></td><td class="mono">${esc(l.codigoUniversal)}</td><td>${esc(l.bodega)}</td><td class="num">${l.cantidadApartada}</td><td class="num">${l.cantidadEntregada}</td><td class="num">${dinero(l.precioUnitario)}</td></tr>`),
+        ) + `<div class="sub" style="padding:8px 12px">Creado ${fecha(p.creadoEn)}</div>`);
+    }),
+    'No hay órdenes con esos filtros.',
+  );
+}
+
+function pintarMovimientos() {
+  const t = $('#mBuscar').value.trim().toLowerCase(), tipo = $('#mTipo').value, b = $('#mBodega').value;
+  const lista = datos.movimientos.filter((m) => {
+    const r = datos.repuestos.get(m.repuestoId);
+    return (!tipo || m.tipo === tipo) && (!b || m.bodega === b) && coincide(t, m.referencia, m.motivo, r?.nombre, r?.sku);
+  });
+  $('#tablaMovimientos').innerHTML = tabla(
+    [['Fecha'], ['Tipo'], ['Repuesto'], ['Bodega'], ['Cantidad', 1], ['Queda', 1], ['Referencia'], ['Motivo']],
+    lista.map((m) => `<tr><td>${fecha(m.creadoEn)}</td><td>${chip(m.tipo)}</td><td>${nombreRepuesto(m.repuestoId)}</td><td>${esc(m.bodega)}</td>
+      <td class="num">${m.cantidad}</td><td class="num">${m.cantidadResultante}</td><td class="mono">${esc(m.referencia ?? '—')}</td><td>${esc(m.motivo ?? '—')}</td></tr>`),
+    'No hay movimientos con esos filtros.',
+  );
+}
+
+function pintarCompras() {
+  const t = $('#cBuscar').value.trim().toLowerCase();
+  const lista = datos.compras.filter((c) => coincide(t, c.numero, c.numeroFacturaProveedor, nombreProveedor(c.proveedorId)));
+  $('#tablaCompras').innerHTML = tabla(
+    [['Compra'], ['Fecha'], ['Proveedor'], ['Factura proveedor'], ['Bodega'], ['Total', 1]],
+    lista.map((c) => `<tr class="fila" data-id="${c.id}"><td class="mono">${esc(c.numero)}</td><td>${fecha(c.fecha)}</td><td>${esc(nombreProveedor(c.proveedorId))}</td>
+      <td class="mono">${esc(c.numeroFacturaProveedor ?? '—')}</td><td>${esc(c.bodega)}</td><td class="num">${dinero(c.total)}</td></tr>` +
+      filaDetalle(c.id, 6, tabla(
+        [['Repuesto'], ['Cant.', 1], ['Costo', 1], ['Subtotal', 1]],
+        c.detalles.map((d) => `<tr><td>${esc(d.nombre)} <span class="mono sub">${esc(d.sku)}</span></td><td class="num">${d.cantidad}</td><td class="num">${dinero(d.costoUnitario)}</td><td class="num">${dinero(d.subtotal)}</td></tr>`),
+      ))),
+    'No hay compras con esos filtros.',
+  );
+}
+
+function pintarStock() {
+  $('#tablaStock').innerHTML = tabla(
+    [['Repuesto'], ['Bodega'], ['Ubicación'], ['Existencia', 1], ['Reservada', 1], ['Disponible', 1], ['Mínimo', 1], ['Estado']],
+    datos.stockBajo.map((s) => `<tr><td>${nombreRepuesto(s.repuestoId)}</td><td>${esc(s.bodega)}</td><td>${esc(s.ubicacion ?? '—')}</td>
+      <td class="num">${s.cantidad}</td><td class="num">${s.reservada}</td><td class="num">${s.disponible}</td><td class="num">${s.minimo}</td>
+      <td>${s.disponible <= 0 ? '<span class="chip c-peligro">Agotado</span>' : '<span class="chip c-alerta">Bajo mínimo</span>'}</td></tr>`),
+    'Ningún repuesto está bajo el mínimo.',
+  );
+}
+
+const tarjetas = (lista) => lista.map(([e, v, n]) => `<div class="tarjeta"><div class="etq">${e}</div><div class="valor">${esc(v)}</div><div class="nota">${esc(n)}</div></div>`).join('');
+const deHoy = (lista, campo) => { const hoy = diaClave.format(new Date()); return lista.filter((x) => diaClave.format(new Date(x[campo])) === hoy); };
+
+function pintarCotizaciones() {
+  const todas = datos.cotizaciones;
+  const hoy = todas.filter((c) => deHoy([c.llamada], 'creadoEn').length);
+  const cuenta = (l, r) => l.filter((c) => c.resultado === r).length;
+  $('#kpisCotizaciones').innerHTML = tarjetas([
+    ['Cotizaciones de hoy', hoy.length, `${todas.length} en total (últimas ${PAGINAS_BITACORA * 100})`],
+    ['Disponibles hoy', cuenta(hoy, 'SI'), 'había unidades suficientes'],
+    ['Insuficientes hoy', cuenta(hoy, 'NO'), 'faltaban unidades'],
+    ['No manejadas hoy', cuenta(hoy, 'NM'), 'código que no tenemos'],
+    ['Valor cotizado hoy', dinero(hoy.reduce((s, c) => s + c.total, 0)), 'precio sin IVA × cantidad'],
+  ]);
+
+  const t = $('#qBuscar').value.trim().toLowerCase(), res = $('#qResultado').value, ll = $('#qLlamante').value;
+  const lista = todas.filter((c) => (!res || c.resultado === res) && (!ll || c.llamada.llamante === ll) &&
+    coincide(t, c.codigo, c.r?.repuesto?.nombre, c.r?.repuesto?.marca, c.r?.repuesto?.sku));
+  $('#tablaCotizaciones').innerHTML = tabla(
+    [['Fecha'], ['Llamante'], ['Código'], ['Repuesto ofrecido'], ['Cant.', 1], ['Precio sin IVA', 1], ['Total', 1], ['Disp.', 1], ['Resultado']],
+    lista.map((c) => {
+      const id = 'q' + c.llamada.id, r = c.r;
+      return `<tr class="fila" data-id="${id}"><td>${fecha(c.llamada.creadoEn)}</td><td>${chip(c.llamada.llamante)}</td><td class="mono">${esc(c.codigo)}</td>
+        <td>${r?.repuesto ? `${esc(r.repuesto.nombre)} <span class="sub">${esc(r.repuesto.marca)}</span>` : '—'}${r?.alternativas?.length ? `<div class="sub">+${r.alternativas.length} alternativa(s)</div>` : ''}</td>
+        <td class="num">${c.cantidad}</td><td class="num">${r?.precio_unitario != null ? dinero(r.precio_unitario) : '—'}</td>
+        <td class="num">${r?.precio_unitario != null ? dinero(c.total) : '—'}</td><td class="num">${r?.unidades_disponibles ?? '—'}</td><td>${chip(c.resultado)}</td></tr>` +
+        filaDetalle(id, 9, (r ? `${r.mensaje ? `<div style="padding:4px 0 8px">${esc(r.mensaje)}</div>` : ''}
+          ${r.precio_unitario != null ? `<div class="sub" style="padding-bottom:8px">Con IVA: ${dinero(r.precio_unitario_con_iva)} · IVA unitario: ${dinero(r.iva_unitario)} (${r.iva_porcentaje}%) · Tienda: ${esc(r.tienda)}</div>` : ''}
+          ${r.bodegas?.length ? tabla([['Bodega'], ['Disponible', 1]], r.bodegas.map((b) => `<tr><td>${esc(b.bodega)}</td><td class="num">${b.disponible}</td></tr>`)) : ''}
+          ${r.alternativas?.length ? '<h3 class="sub" style="margin:10px 0 4px">Alternativas</h3>' + tabla([['Repuesto'], ['Marca'], ['Precio sin IVA', 1], ['Disponible', 1]],
+            r.alternativas.map((a) => `<tr><td>${esc(a.nombre)} <span class="mono sub">${esc(a.sku)}</span></td><td>${esc(a.marca)}</td><td class="num">${dinero(a.precio_unitario)}</td><td class="num">${a.unidades_disponibles} ${a.disponible ? '' : '<span class="chip c-alerta">no alcanza</span>'}</td></tr>`)) : ''}`
+          : `<pre>${esc(c.llamada.resultado ?? 'Sin resultado')}</pre>`));
+    }),
+    'No hay cotizaciones registradas. Aparecen cuando alguien llama consultar_precio_repuesto.',
+  );
+}
+
+function pintarLogs() {
+  const hoy = deHoy(datos.bitacora, 'creadoEn');
+  const errores = hoy.filter((l) => l.esError).length;
+  const prom = hoy.length ? Math.round(hoy.reduce((s, l) => s + l.duracionMs, 0) / hoy.length) : 0;
+  const lenta = hoy.reduce((m, l) => (l.duracionMs > (m?.duracionMs ?? -1) ? l : m), null);
+  $('#kpisLogs').innerHTML = tarjetas([
+    ['Llamadas de hoy', hoy.length, `${datos.bitacora.length} cargadas (últimas ${PAGINAS_BITACORA * 100})`],
+    ['Errores de hoy', errores, hoy.length ? `${Math.round((errores / hoy.length) * 100)} % de las llamadas` : 'sin llamadas'],
+    ['Duración promedio hoy', `${prom} ms`, 'por herramienta'],
+    ['Más lenta hoy', lenta ? `${lenta.duracionMs} ms` : '—', lenta?.herramienta ?? ''],
+  ]);
+
+  const t = $('#lBuscar').value.trim().toLowerCase(), h = $('#lHerramienta').value, ll = $('#lLlamante').value, soloErr = $('#lErrores').checked;
+  const lista = datos.bitacora.filter((l) => (!h || l.herramienta === h) && (!ll || l.llamante === ll) && (!soloErr || l.esError) &&
+    coincide(t, l.herramienta, JSON.stringify(l.argumentos), l.resultado));
+  $('#tablaLogs').innerHTML = tabla(
+    [['Fecha'], ['Llamante'], ['Herramienta'], ['Argumentos'], ['Duración', 1], ['Estado']],
+    lista.map((l) => {
+      const id = 'l' + l.id, args = JSON.stringify(l.argumentos ?? {});
+      return `<tr class="fila" data-id="${id}"><td>${fecha(l.creadoEn)}</td><td>${chip(l.llamante)}</td><td class="mono">${esc(l.herramienta)}</td>
+        <td class="mono corto" title="${esc(args)}">${args === '{}' ? '—' : esc(args)}</td>
+        <td class="num">${l.duracionMs} ms</td><td>${chip(l.esError ? 'ERROR' : 'OK')}</td></tr>` +
+        filaDetalle(id, 6, `<div class="bloques"><div><h3>Argumentos</h3><pre>${esc(bonito(l.argumentos ?? {}))}</pre></div>
+          <div><h3>Resultado</h3><pre>${esc(l.resultado == null ? 'Sin resultado' : bonito(l.resultado))}</pre></div></div>`);
+    }),
+    'No hay llamadas con esos filtros.',
+  );
+}
+
+function pintar() { pintarResumen(); pintarFacturas(); pintarCotizaciones(); pintarOrdenes(); pintarMovimientos(); pintarCompras(); pintarStock(); pintarLogs(); }
+
+// Pestañas
+$('#pestanas').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-vista]'); if (!b) return;
+  document.querySelectorAll('#pestanas button').forEach((x) => x.classList.toggle('activa', x === b));
+  document.querySelectorAll('main section').forEach((s) => (s.hidden = s.dataset.vista !== b.dataset.vista));
+});
+// Abrir/cerrar el detalle de una fila
+document.querySelector('main').addEventListener('click', (ev) => {
+  const fila = ev.target.closest('tr.fila'); if (!fila) return;
+  const id = fila.dataset.id; abiertos.has(id) ? abiertos.delete(id) : abiertos.add(id); pintar();
+});
+// Filtros
+for (const [ids, fn] of [[['#fBuscar', '#fEstado', '#fBodega'], pintarFacturas], [['#oBuscar', '#oEstado'], pintarOrdenes],
+  [['#qBuscar', '#qResultado', '#qLlamante'], pintarCotizaciones], [['#lBuscar', '#lHerramienta', '#lLlamante', '#lErrores'], pintarLogs],
+  [['#mBuscar', '#mTipo', '#mBodega'], pintarMovimientos], [['#cBuscar'], pintarCompras]]) {
+  ids.forEach((id) => $(id).addEventListener('input', fn));
+}
+// Tema
+$('#tema').addEventListener('click', () => {
+  const html = document.documentElement;
+  const oscuro = html.dataset.theme ? html.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  html.dataset.theme = oscuro ? 'light' : 'dark';
+  try { localStorage.setItem('tema-monitor', html.dataset.theme); } catch {}
+});
+try { const t = localStorage.getItem('tema-monitor'); if (t) document.documentElement.dataset.theme = t; } catch {}
+// Actualización
+$('#recargar').addEventListener('click', cargar);
+setInterval(() => { if ($('#auto').checked && !document.hidden) cargar(); }, 30000);
+cargar();
+</script>
+</body>
+</html>

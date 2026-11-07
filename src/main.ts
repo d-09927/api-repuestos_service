@@ -1,11 +1,16 @@
+import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc, ZodValidationPipe } from 'nestjs-zod';
 import { AppModule } from './app.module';
 import { DomainExceptionFilter } from './common/domain-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Páginas estáticas (public/): el monitor en /monitor.html, mismo origen que la API (sin CORS).
+  app.useStaticAssets(join(process.cwd(), 'public'));
 
   // El MCP queda fuera del prefijo: los agentes se conectan a /mcp.
   app.setGlobalPrefix('api', { exclude: ['mcp'] });

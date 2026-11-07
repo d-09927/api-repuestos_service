@@ -48,7 +48,7 @@ describe('AgenteService', () => {
   beforeEach(() => {
     completar = jest.fn();
     sesion = {
-      herramientas: ['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta', 'apartar_para_orden', 'consultar_orden', PUERTA_DEL_AGENTE].map(herramienta),
+      herramientas: ['buscar_repuestos', 'consultar_precio_repuesto', 'registrar_venta', 'despachar_orden', 'consultar_orden', PUERTA_DEL_AGENTE].map(herramienta),
       ejecutar: jest.fn().mockResolvedValue('{"items":[{"sku":"BOS-FA-110","precio":25000}]}'),
       cerrar: jest.fn().mockResolvedValue(undefined),
     };
@@ -217,7 +217,7 @@ describe('AgenteService', () => {
 
       await agente.responder('Cotiza 1 PAS-DEL-CER', undefined, 'agente');
 
-      expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto', 'apartar_para_orden', 'consultar_orden']);
+      expect(nombres(completar.mock.calls[0][1])).toEqual(['buscar_repuestos', 'consultar_precio_repuesto', 'despachar_orden', 'consultar_orden']);
       expect(vistoEn(0)[0].content).toMatch(/agentes de otros\s+sectores/);
     });
 
@@ -280,12 +280,12 @@ describe('AgenteService', () => {
     });
 
     it('la orden y el id_mensaje de las acciones de pedido los pone el código, no el modelo', async () => {
-      sesion.ejecutar.mockResolvedValue(JSON.stringify({ codigo_orden: 'OT-0054', estado: 'APARTADO' }));
+      sesion.ejecutar.mockResolvedValue(JSON.stringify({ codigo_orden: 'OT-0054', estado: 'DESPACHADO' }));
       completar
         .mockResolvedValueOnce(
           pideHerramientas(
             // El modelo se equivoca de orden e inventa un id_mensaje.
-            pide('a', 'apartar_para_orden', { codigo_orden: 'OT-9999', lineas: [{ codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }], id_mensaje: 'inventado' }),
+            pide('a', 'despachar_orden', { codigo_orden: 'OT-9999', lineas: [{ codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }], id_mensaje: 'inventado' }),
             pide('b', 'consultar_orden', { codigo_orden: 'OT-9999' }),
           ),
         )
@@ -294,16 +294,16 @@ describe('AgenteService', () => {
       const r = await agente.responder('Aparta 1 PAS-DEL-CER', undefined, 'agente', { codigoOrden: 'OT-0054', idMensaje: 'fac-123' });
 
       const [apartar, consultar] = sesion.ejecutar.mock.calls.map(([l]) => JSON.parse(l.function.arguments));
-      expect(apartar).toEqual({ codigo_orden: 'OT-0054', lineas: [{ codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }], id_mensaje: 'fac-123:apartar_para_orden' });
+      expect(apartar).toEqual({ codigo_orden: 'OT-0054', lineas: [{ codigo_repuesto: 'PAS-DEL-CER', cantidad: 1 }], id_mensaje: 'fac-123:despachar_orden' });
       expect(consultar).toEqual({ codigo_orden: 'OT-0054' });
       // En la conversación queda lo que de verdad se ejecutó.
       expect(JSON.parse((vistoEn(1)[2] as { tool_calls: LlamadaHerramienta[] }).tool_calls[0].function.arguments).codigo_orden).toBe('OT-0054');
-      expect(r.pedido).toEqual({ codigo_orden: 'OT-0054', estado: 'APARTADO' });
+      expect(r.pedido).toEqual({ codigo_orden: 'OT-0054', estado: 'DESPACHADO' });
     });
 
     it('el VIN lo pone el código: el del mensaje, y si no vino, el del modelo se descarta', async () => {
       sesion.ejecutar.mockResolvedValue('{}');
-      const pedir = pideHerramientas(pide('a', 'apartar_para_orden', { lineas: [], vin: 'INVENTADO' }));
+      const pedir = pideHerramientas(pide('a', 'despachar_orden', { lineas: [], vin: 'INVENTADO' }));
       completar
         .mockResolvedValueOnce(pedir)
         .mockResolvedValueOnce(textoFinal('ok'))
@@ -321,16 +321,16 @@ describe('AgenteService', () => {
     it('sin id_mensaje del otro sector, cada respuesta usa uno nuevo (no se confunde con otra intención)', async () => {
       sesion.ejecutar.mockResolvedValue('{}');
       completar
-        .mockResolvedValueOnce(pideHerramientas(pide('a', 'apartar_para_orden', { lineas: [] })))
+        .mockResolvedValueOnce(pideHerramientas(pide('a', 'despachar_orden', { lineas: [] })))
         .mockResolvedValueOnce(textoFinal('ok'))
-        .mockResolvedValueOnce(pideHerramientas(pide('a', 'apartar_para_orden', { lineas: [] })))
+        .mockResolvedValueOnce(pideHerramientas(pide('a', 'despachar_orden', { lineas: [] })))
         .mockResolvedValueOnce(textoFinal('ok'));
 
       await agente.responder('Aparta', undefined, 'agente', { codigoOrden: 'OT-1' });
       await agente.responder('Aparta', undefined, 'agente', { codigoOrden: 'OT-1' });
 
       const ids = sesion.ejecutar.mock.calls.map(([l]) => JSON.parse(l.function.arguments).id_mensaje);
-      expect(ids[0]).toMatch(/:apartar_para_orden$/);
+      expect(ids[0]).toMatch(/:despachar_orden$/);
       expect(ids[0]).not.toBe(ids[1]);
     });
 

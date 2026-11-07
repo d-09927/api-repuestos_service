@@ -27,7 +27,8 @@ npm run build
 
 Un **módulo por tabla**, sin mezclar lógica ni tablas. Los once módulos: `repuestos`, `compatibilidades`,
 `stock`, `movimientos`, `proveedores`, `clientes`, `compras`, `compra-detalles`, `ventas`, `venta-detalles`, `pedidos`
-(sus líneas van en jsonb dentro de `pedidos`). Además `ia/` y `agente/` (con su tabla `agente_mensajes`).
+(sus líneas van en jsonb dentro de `pedidos`). Además `ia/`, `agente/` (con su tabla `agente_mensajes`) y `bitacora/`
+(tabla `mcp_bitacora`: cada llamada al MCP). El monitor es `public/monitor.html` (en `/monitor.html`, solo GET).
 
 ```
 src/<modulo>/
@@ -70,9 +71,12 @@ src/mcp/
 
 - SDK v2: `@modelcontextprotocol/server` y `@modelcontextprotocol/node` (tiene build CommonJS). `inputSchema: z.object({...})`.
 - 17 herramientas de **lectura** siempre (incluye `hablar_con_repuestos`, la puerta de los otros agentes, `consultar_precio_repuesto`, `catalogo_repuestos` y `consultar_orden`); 8 de **escritura** solo si `MCP_PERMITIR_ESCRITURA=true`: reservar, liberar,
-  vender y comprar exigen `confirmado: true` (con `false` devuelven un resumen); las 4 de pedidos (apartar, entregar,
-  cancelar, pagar) no, porque la confirmación viene de facturación, pero exigen `id_mensaje`.
+  vender y comprar exigen `confirmado: true` (con `false` devuelven un resumen); las 3 de pedidos (despachar, cancelar,
+  pagar) no, porque la confirmación viene de facturación, pero exigen `id_mensaje`.
 - Los errores se devuelven como resultado `isError` con un mensaje legible, no como excepción.
+- Cada llamada queda en la bitácora: `conBitacora` (`src/mcp/bitacora.ts`) envuelve `registerTool` antes de registrar
+  las herramientas, así que una herramienta nueva se registra sola. Llamante: `EXTERNO`, `AGENTE` (cabecera
+  `X-Llamante: agente-repuestos`, solo etiqueta) o `AUTOMAX`. `GET /api/bitacora`.
 - `ComprasModule` y `VentasModule` deben exportar su service (`exports: [...]`) para que el MCP los use.
 - Variables: `MCP_TOKEN` (sin él, `/mcp` responde 503) y `MCP_PERMITIR_ESCRITURA`.
 - Probar con `npx @modelcontextprotocol/inspector` (Streamable HTTP, `http://localhost:3000/mcp`, cabecera
@@ -97,8 +101,10 @@ src/mcp/
    `AgenteService.responder(texto, id, 'agente')`: prompt `PROMPT_AGENTES`, solo `HERRAMIENTAS_ENTRE_AGENTES` (consulta),
    y `datos[]` sale de los resultados de `consultar_precio_repuesto`, no del texto del modelo. El agente nunca ve su
    propia puerta (`PUERTA_DEL_AGENTE`).
-   Fase 2 hecha: módulo `pedidos` (APARTADO → ENTREGADO → PAGADO / CANCELADO), herramientas `apartar_para_orden`,
-   `entregar_orden`, `cancelar_orden`, `registrar_pago_orden`, `consultar_orden`; `ventas.estado` (PAGADA / PENDIENTE_PAGO)
+   Fase 2 hecha: módulo `pedidos`. Cuando el cliente acepta la cotización, `despachar_orden` aparta y despacha en un
+   solo paso: pedido DESPACHADO y venta PENDIENTE_PAGO; facturación paga con `registrar_pago_orden` (PAGADO), por el
+   agente. APARTADO es transitorio (venta fallida a medias o pedido viejo: despachar lo termina, `cancelar_orden` lo
+   libera); un DESPACHADO no se cancela. También `consultar_orden`; `ventas.estado` (PAGADA / PENDIENTE_PAGO)
    y `marcarPagada`; comprador = facturación (`FACTURACION_NIT`). En modo agente el código fija `codigo_orden` e
    `id_mensaje` (`<id del mensaje>:<herramienta>`). Pendiente: que facturación deje el REST directo y cerrarlo (auth).
    **AutoMax (concesionario), garantías:** herramienta `consultar_compras_vin`, visible **solo** con `MCP_TOKEN_AUTOMAX`

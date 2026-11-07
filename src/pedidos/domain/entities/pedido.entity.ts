@@ -7,13 +7,13 @@ export interface LineaPedido {
   sku: string;
   nombre: string;
   bodega: string;
-  /** Precio de catálogo (con IVA) al apartar. La venta toma el del catálogo al entregar. */
+  /** Precio de catálogo (con IVA) al apartar. La venta toma el del catálogo al despachar. */
   precioUnitario: number;
   cantidadApartada: number;
   cantidadEntregada: number;
 }
 
-/** La venta que se generó al entregar (una por bodega). */
+/** La venta por cobrar que se generó al despachar (una por bodega). */
 export interface VentaDelPedido {
   id: string;
   numero: string;

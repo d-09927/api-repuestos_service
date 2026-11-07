@@ -15,10 +15,10 @@ export function registrarAgente(servidor: McpServer, { agente }: Servicios) {
       title: 'Hablar con el agente de repuestos',
       description:
         'Puerta de entrada para los agentes de otros sectores (facturación, taller). Escríbale en español lo que necesita y ' +
-        'el agente de repuestos decide qué hacer: decir qué repuestos tenemos ("¿Qué repuestos de frenos tienen?"), cotizar ("Cotiza 2 AMO-DEL-GAS y 1 PAS-DEL-CER"), apartar ("El cliente ' +
-        'aceptó: aparta 2 AMO-DEL-GAS"), entregar ("Terminamos: se usaron 2 AMO-DEL-GAS"), cancelar ("Cancela el pedido") ' +
-        'o registrar el pago ("Pagamos los repuestos, referencia PSE-123"). Envíe siempre codigo_orden, y un id_mensaje ' +
-        'único por intención para apartar, entregar, cancelar o pagar. Responde texto, datos (cotizaciones, precio_unitario ' +
+        'el agente de repuestos decide qué hacer: decir qué repuestos tenemos ("¿Qué repuestos de frenos tienen?"), cotizar ("Cotiza 2 AMO-DEL-GAS y 1 PAS-DEL-CER"), despachar cuando el cliente ' +
+        'aceptó ("El cliente aceptó la cotización: 2 AMO-DEL-GAS"; queda la factura PENDIENTE DE PAGO y el pedido DESPACHADO) ' +
+        'o registrar el pago de esa factura ("Pagamos los repuestos, referencia PSE-123"). Envíe siempre codigo_orden, y un ' +
+        'id_mensaje único por intención para despachar, cancelar o pagar. Responde texto, datos (cotizaciones, precio_unitario ' +
         'SIN IVA), catalogo (los repuestos disponibles, uno por código) y pedido (estado del pedido de la orden), tal como salen del inventario. Puede tardar varios segundos.',
       inputSchema: z.object({
         mensaje: z.string().trim().min(1).max(4000).describe('Lo que necesita, en español. Use los códigos universales del taller.'),
@@ -27,21 +27,21 @@ export function registrarAgente(servidor: McpServer, { agente }: Servicios) {
           .trim()
           .max(50)
           .optional()
-          .describe('Código de la orden de taller; por ejemplo: OT-0054. Obligatorio para apartar, entregar, cancelar o pagar.'),
+          .describe('Código de la orden de taller; por ejemplo: OT-0054. Obligatorio para despachar, cancelar o pagar.'),
         conversacion_id: z.uuid().optional().describe('El conversacion_id de una respuesta anterior, para continuar esa conversación'),
         vin: z
           .string()
           .optional()
-          .describe('VIN del vehículo de la orden (17 caracteres). Envíelo al apartar o entregar: queda en la venta para la garantía.'),
+          .describe('VIN del vehículo de la orden (17 caracteres). Envíelo al despachar: queda en la venta para la garantía.'),
         id_mensaje: z
           .string()
           .max(120)
           .optional()
           .describe(
-            'Identificador único de esta intención. En un reintento envíe el mismo: no se aparta, entrega ni cobra dos veces.',
+            'Identificador único de esta intención. En un reintento envíe el mismo: no se despacha ni cobra dos veces.',
           ),
       }),
-      // Puede apartar, entregar o cobrar (según lo que decida el agente): no es de solo lectura.
+      // Puede despachar o cobrar (según lo que decida el agente): no es de solo lectura.
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     async ({ mensaje, codigo_orden, conversacion_id, id_mensaje, vin }) => {

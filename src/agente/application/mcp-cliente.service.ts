@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { AGENTE_PROPIO, CABECERA_LLAMANTE } from '../../mcp/llamante';
 import type { Herramienta, LlamadaHerramienta } from '../../ia/ia.service';
 
 export interface SesionMcp{
@@ -23,7 +24,7 @@ export class McpClienteService {
         const cliente = new Client({name:'agente-repuestos', version: '1.0.0'});
         await cliente.connect(
             new StreamableHTTPClientTransport(new URL(this.url), {
-                requestInit: { headers: { Authorization: `Bearer ${this.token}`}},
+                requestInit: { headers: { Authorization: `Bearer ${this.token}`, [CABECERA_LLAMANTE]: AGENTE_PROPIO }},
             }),
         )
 

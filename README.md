@@ -55,10 +55,13 @@ Por el mismo mensaje el agente maneja el **pedido de una orden de taller** (mód
 
 | Mensaje del otro sector | Herramienta que usa el agente | Estado |
 |---|---|---|
-| "El cliente aceptó: aparta 2 AMO-DEL-GAS" | `apartar_para_orden` (reserva; marca más barata que alcance en una bodega) | APARTADO |
-| "Terminamos: se usaron 2 AMO-DEL-GAS" | `entregar_orden` (venta **por cobrar** a facturación de lo usado; libera el sobrante) | ENTREGADO |
-| "Pagamos, referencia PSE-123" | `registrar_pago_orden` (las ventas pasan a PAGADA) | PAGADO |
-| "Cancela el pedido" | `cancelar_orden` (libera todo) | CANCELADO |
+| "El cliente aceptó la cotización: 2 AMO-DEL-GAS" | `despachar_orden` (marca más barata que alcance en una bodega; en un solo paso aparta, despacha y deja la venta **PENDIENTE_PAGO** a facturación) | DESPACHADO |
+| "Pagamos, referencia PSE-123" | `registrar_pago_orden` (facturación paga: las ventas pasan a PAGADA) | PAGADO |
+| "Cancela el pedido" | `cancelar_orden` (solo un pedido APARTADO sin despachar; libera lo apartado) | CANCELADO |
+
+APARTADO es transitorio: si la venta falla a mitad de camino el pedido queda APARTADO con lo vendido guardado, y el
+reintento de `despachar_orden` lo termina sin facturar dos veces (igual para un pedido APARTADO de antes de este flujo).
+Un pedido DESPACHADO no se cancela: ya tiene factura (las anulaciones están pendientes).
 
 `codigo_orden` e `id_mensaje` los pone el código desde el mensaje (no el modelo): un reintento con el mismo
 `id_mensaje` no repite la acción. El comprador es facturación (`FACTURACION_NIT`, `FACTURACION_NOMBRE`). En modo
@@ -85,8 +88,21 @@ herramienta; el token general no la ve. No pasa por el agente porque debe respon
 - Las categorías del catálogo se convierten quitando mayúsculas y tildes (`Suspensión` → `suspension`). `Filtros` y
   `Lubricantes` no son componentes de garantía: no salen.
 - Las ventas guardan `vin` (opcional en `POST /api/ventas` y en `registrar_venta`). En una orden de taller se envía en
-  `hablar_con_repuestos { vin }` al apartar o entregar. **Una venta sin VIN no cuenta para la garantía.**
+  `hablar_con_repuestos { vin }` al despachar. **Una venta sin VIN no cuenta para la garantía.**
 - `GET /api/salud` responde `{"estado":"ok"}` sin token. Venta de prueba de REL-1006: `npm run sembrar:garantia`.
+
+### Monitor y bitácora del MCP
+
+- **Monitor:** `http://localhost:3100/monitor.html` (archivo `public/monitor.html`, servido por la misma API). Muestra
+  facturas y su estado de pago, cotizaciones, órdenes de taller, movimientos, compras, stock bajo y los logs del MCP.
+  Solo hace GET y se actualiza cada 30 s. No pide token, como el resto de la API REST.
+- **Bitácora** (módulo `bitacora`, tabla `mcp_bitacora`): cada llamada a una herramienta del MCP deja una fila con el
+  llamante (`EXTERNO` con el token general, `AGENTE` = nuestro agente, `AUTOMAX`), la herramienta, los argumentos, el
+  resultado (recortado a 20 000 caracteres), si fue error y la duración. Se registra solo, en `src/mcp/bitacora.ts`
+  (`conBitacora`); guardarla nunca hace fallar ni demora la respuesta. Nuestro agente se identifica con la cabecera
+  `X-Llamante: agente-repuestos`, que solo sirve de etiqueta (no da permisos).
+- `GET /api/bitacora?herramienta=&llamante=&soloErrores=true&desde=&hasta=&pagina=&limite=`. Las **cotizaciones** son
+  las llamadas a `consultar_precio_repuesto` (`?herramienta=consultar_precio_repuesto`).
 
 ### La herramienta que usa el agente: `consultar_precio_repuesto`
 

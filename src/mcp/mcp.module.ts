@@ -8,6 +8,7 @@ import { RepuestosModule } from "../repuestos/repuestos.module";
 import { StockModule } from "../stock/stock.module";
 import { VentasModule } from "../ventas/ventas.module";
 import { PedidosModule } from "../pedidos/pedidos.module";
+import { BitacoraModule } from "../bitacora/bitacora.module";
 import { McpController } from "./mcp.controller";
 
 // Importa los módulos (no los services) cuyos services usan las herramientas.
@@ -22,6 +23,7 @@ import { McpController } from "./mcp.controller";
         VentasModule,
         AgenteModule,
         PedidosModule,
+        BitacoraModule,
     ],
     controllers:[McpController]
 })

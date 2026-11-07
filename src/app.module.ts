@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BitacoraModule } from './bitacora/bitacora.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { UnidadDeTrabajoModule } from './common/unidad-de-trabajo/unidad-de-trabajo.module';
 import { CompatibilidadesModule } from './compatibilidades/compatibilidades.module';
@@ -48,6 +49,8 @@ import { AgenteModule } from './agente/agente.module';
     VentaDetallesModule,
     // Pedidos de las órdenes de taller (los piden otros sectores a nuestro agente).
     PedidosModule,
+    // Registro de cada llamada al MCP (lo lee el monitor).
+    BitacoraModule,
     // Puerta de entrada para agentes (llama a los services de arriba).
     McpModule,
     AgenteModule

@@ -17,6 +17,9 @@ import { registrarPedidos } from "./herramientas/pedidos.herramientas";
 import { registrarPersonas } from "./herramientas/personas.herramientas";
 import { registrarRepuestos } from "./herramientas/repuestos.herramientas";
 import { registrarStock } from "./herramientas/stock.herramientas";
+import { BitacoraService } from "../bitacora/application/bitacora.service";
+import { Llamante } from "../bitacora/domain/enums/llamante.enum";
+import { conBitacora } from "./bitacora";
 
 
 
@@ -30,6 +33,7 @@ export interface Servicios {
   ventas: VentasService;
   agente: AgenteService;
   pedidos: PedidosService;
+  bitacora: BitacoraService;
 }
 
 export interface OpcionesMcp {
@@ -38,6 +42,8 @@ export interface OpcionesMcp {
   tienda: string;
   /** IVA incluido en los precios del catálogo (IVA_PORCENTAJE). */
   ivaPorcentaje: number;
+  /** Quién llama (queda en la bitácora): nuestro agente o alguien externo con el token general. */
+  llamante: Llamante;
 }
 
 
@@ -54,13 +60,15 @@ servicios: Servicios, opciones:OpcionesMcp
         'Antes de registrar una venta, una compra o una reserva, muestre el resumen al usuario y pida su confirmación.',
         },
     );
+    // Cada llamada a una herramienta queda en la bitácora (la ve el monitor).
+    conBitacora(servidor, servicios.bitacora, opciones.llamante);
 
     registrarRepuestos(servidor,servicios);
     registrarStock(servidor, servicios);
     registrarPersonas(servidor, servicios);
     registrarDocumentos(servidor, servicios);
     registrarCotizacion(servidor, servicios, opciones);
-    // consultar_orden siempre; apartar, entregar, cancelar y pagar solo con escritura habilitada.
+    // consultar_orden siempre; despachar, cancelar y pagar solo con escritura habilitada.
     registrarPedidos(servidor, servicios, opciones);
     // Puerta de entrada de los agentes de otros sectores.
     registrarAgente(servidor, servicios);
@@ -73,7 +81,11 @@ servicios: Servicios, opciones:OpcionesMcp
 
 /** El servidor que ve AutoMax con su token: solo la consulta de la garantía, nada del resto del MCP. */
 export function crearServidorAutomax(servicios: Servicios): McpServer {
-    const servidor = new McpServer({ name: "repuestos-garantias", version: '1.0.0' });
+    const servidor = conBitacora(
+        new McpServer({ name: "repuestos-garantias", version: '1.0.0' }),
+        servicios.bitacora,
+        Llamante.AUTOMAX,
+    );
     registrarGarantias(servidor, servicios);
     return servidor;
 }

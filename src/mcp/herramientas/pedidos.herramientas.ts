@@ -66,8 +66,9 @@ export function registrarPedidos(servidor: McpServer, { pedidos }: Servicios, op
     {
       title: 'Consultar el pedido de una orden',
       description:
-        'Estado del pedido de repuestos de una orden de taller: qué se apartó (marca y bodega), qué se entregó, ' +
-        'las ventas por cobrar y si ya se pagó. Estados: APARTADO, ENTREGADO, PAGADO, CANCELADO.',
+        'Estado del pedido de repuestos de una orden de taller: qué se despachó (marca y bodega), las ventas por ' +
+        'cobrar y si ya se pagó. Estados: DESPACHADO (factura pendiente de pago), PAGADO, CANCELADO; APARTADO si quedó ' +
+        'reservado sin despachar.',
       inputSchema: z.object({ codigo_orden: codigoOrden }),
       annotations: SOLO_LECTURA,
     },
@@ -77,49 +78,33 @@ export function registrarPedidos(servidor: McpServer, { pedidos }: Servicios, op
   if (!opciones.permitirEscritura) return;
 
   servidor.registerTool(
-    'apartar_para_orden',
+    'despachar_orden',
     {
-      title: 'Apartar repuestos para una orden',
+      title: 'Despachar los repuestos de una orden (el cliente aceptó la cotización)',
       description:
-        'Aparta (reserva) los repuestos de una orden de taller cuando el cliente aceptó la cotización. Por cada código ' +
-        'universal la tienda elige la marca más barata que alcance en una misma bodega. Todo o nada: si uno no alcanza, ' +
-        'no se aparta ninguno. Un pedido por orden.',
+        'Cuando el cliente aceptó la cotización: aparta y despacha los repuestos de la orden en un solo paso y deja la ' +
+        'venta (factura) PENDIENTE DE PAGO a nombre de facturación; el pedido queda DESPACHADO. Por cada código universal ' +
+        'la tienda elige la marca más barata que alcance en una misma bodega. Todo o nada: si uno no alcanza, no se ' +
+        'despacha ninguno. Un pedido por orden. Facturación paga después (registrar_pago_orden).',
       inputSchema: z.object({
         codigo_orden: codigoOrden,
-        lineas: lineas('Repuestos a apartar', 1).min(1),
+        lineas: lineas('Repuestos aceptados por el cliente', 1).min(1),
         vin,
         id_mensaje: idMensaje,
       }),
       annotations: ESCRITURA,
     },
     ({ codigo_orden, lineas: l, vin: v, id_mensaje }) =>
-      responder(() => pedidos.apartar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, vin: v, lineas: aComando(l) })),
-  );
-
-  servidor.registerTool(
-    'entregar_orden',
-    {
-      title: 'Entregar el pedido de una orden',
-      description:
-        'Cuando el taller terminó: registra la venta POR COBRAR de lo que realmente se usó (sale de lo apartado) y ' +
-        'devuelve a disponible lo que sobró. Envíe en usadas solo lo usado; lo que no venga se toma como 0.',
-      inputSchema: z.object({
-        codigo_orden: codigoOrden,
-        usadas: lineas('Repuestos realmente usados (cantidad 0 o más)', 0),
-        vin,
-        id_mensaje: idMensaje,
-      }),
-      annotations: ESCRITURA,
-    },
-    ({ codigo_orden, usadas, vin: v, id_mensaje }) =>
-      responder(() => pedidos.entregar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, vin: v, usadas: aComando(usadas) })),
+      responder(() => pedidos.despachar({ codigoOrden: codigo_orden, idMensaje: id_mensaje, vin: v, lineas: aComando(l) })),
   );
 
   servidor.registerTool(
     'cancelar_orden',
     {
       title: 'Cancelar el pedido de una orden',
-      description: 'La orden se canceló o el cliente desistió: libera todo lo apartado. Solo si aún no se entregó.',
+      description:
+        'Libera lo apartado de una orden que quedó APARTADA sin despachar. Un pedido DESPACHADO ya tiene factura y no se ' +
+        'puede cancelar por aquí (las anulaciones aún no existen).',
       inputSchema: z.object({
         codigo_orden: codigoOrden,
         motivo: z.string().max(200).optional().describe('Por qué se cancela'),
@@ -135,7 +120,9 @@ export function registrarPedidos(servidor: McpServer, { pedidos }: Servicios, op
     'registrar_pago_orden',
     {
       title: 'Registrar el pago del pedido de una orden',
-      description: 'Facturación nos pagó los repuestos entregados de la orden: las ventas por cobrar pasan a pagadas.',
+      description:
+        'Facturación nos pagó los repuestos despachados de la orden: las ventas pendientes de pago pasan a PAGADA y el ' +
+        'pedido a PAGADO. Solo un pedido DESPACHADO.',
       inputSchema: z.object({
         codigo_orden: codigoOrden,
         referencia_pago: z.string().trim().min(1).max(100).describe('Referencia del pago (PSE, transferencia)'),

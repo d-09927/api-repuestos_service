@@ -11,9 +11,8 @@ import { RepuestoServicePort } from '../domain/ports/repuesto.service.port';
 import { MovimientoDePedido, StockServicePort } from '../domain/ports/stock.service.port';
 import { VentaServicePort } from '../domain/ports/venta.service.port';
 import {
-  ApartarPedidoCommand,
   CancelarPedidoCommand,
-  EntregarPedidoCommand,
+  DespacharPedidoCommand,
   LineaCodigoCommand,
   PagarPedidoCommand,
 } from './dto/pedido.commands';
@@ -21,8 +20,8 @@ import {
 const MAX_LINEAS = 50;
 
 /**
- * Casos de uso de los pedidos de una orden de taller: apartar, entregar (genera la venta por
- * cobrar de lo usado y libera el sobrante), cancelar y registrar el pago.
+ * Casos de uso de los pedidos de una orden de taller: despachar (el cliente aceptó la cotización:
+ * aparta y genera la venta por cobrar), registrar el pago que hace facturación y cancelar lo apartado.
  */
 @Injectable()
 export class PedidosService {
@@ -36,15 +35,38 @@ export class PedidosService {
     private readonly clientes: ClienteServicePort,
   ) {}
 
-  async apartar(cmd: ApartarPedidoCommand): Promise<Pedido> {
+  /**
+   * El cliente aceptó la cotización: aparta los repuestos y genera en el mismo paso la venta por
+   * cobrar (PENDIENTE_PAGO) a facturación; el pedido queda DESPACHADO. Facturación paga después.
+   *
+   * Si la venta falla a mitad de camino el pedido queda APARTADO (con lo reservado) y lo vendido
+   * guardado: un reintento termina de despachar sin vender dos veces. Lo mismo para un pedido
+   * APARTADO de antes de este flujo.
+   */
+  async despachar(cmd: DespacharPedidoCommand): Promise<Pedido> {
     const codigoOrden = this.normalizarOrden(cmd.codigoOrden);
     const idMensaje = this.normalizarMensaje(cmd.idMensaje);
     const existente = await this.pedidos.buscarPorCodigoOrden(codigoOrden);
     if (existente?.mensajes.includes(idMensaje)) return existente;
-    if (existente && existente.estado !== EstadoPedido.CANCELADO) {
-      throw new ConflictError(`La orden ${codigoOrden} ya tiene un pedido ${existente.estado}`);
+
+    let pedido: Pedido;
+    if (existente?.estado === EstadoPedido.APARTADO) {
+      pedido = existente;
+      if (cmd.vin != null) pedido.vin = normalizarVin(cmd.vin);
+    } else {
+      if (existente && existente.estado !== EstadoPedido.CANCELADO) {
+        throw new ConflictError(`La orden ${codigoOrden} ya tiene un pedido ${existente.estado}`);
+      }
+      pedido = await this.apartar(existente, codigoOrden, cmd);
     }
 
+    await this.venderLoApartado(pedido);
+    pedido.estado = EstadoPedido.DESPACHADO;
+    return this.guardar(pedido, idMensaje);
+  }
+
+  /** Reserva las unidades y guarda el pedido APARTADO (todavía sin el id_mensaje: falta despachar). */
+  private async apartar(existente: Pedido | null, codigoOrden: string, cmd: DespacharPedidoCommand): Promise<Pedido> {
     const vin = cmd.vin == null ? null : normalizarVin(cmd.vin);
     const lineas = await this.elegir(this.validarLineas(cmd.lineas, 1));
     const movimientos = this.porBodega(lineas, codigoOrden, (l) => l.cantidadApartada);
@@ -80,7 +102,6 @@ export class PedidosService {
       lineas,
       ventas: [],
       referenciaPago: null,
-      mensajes: [...pedido.mensajes, idMensaje],
       actualizadoEn: ahora,
     });
     try {
@@ -93,56 +114,45 @@ export class PedidosService {
     return pedido;
   }
 
-  async entregar(cmd: EntregarPedidoCommand): Promise<Pedido> {
-    const pedido = await this.requerir(cmd.codigoOrden);
-    const idMensaje = this.normalizarMensaje(cmd.idMensaje);
-    if (pedido.mensajes.includes(idMensaje)) return pedido;
-    this.exigirEstado(pedido, EstadoPedido.APARTADO, 'entregar');
+  /**
+   * Vende todo lo apartado (sale de lo reservado) como venta por cobrar, una por bodega. Guarda
+   * después de cada venta: si una falla, las ya hechas no se repiten en el reintento.
+   */
+  private async venderLoApartado(pedido: Pedido): Promise<void> {
+    for (const l of pedido.lineas) l.cantidadEntregada = l.cantidadApartada;
+    const porVender = this.porBodega(pedido.lineas, pedido.codigoOrden, (l) => l.cantidadEntregada).filter(
+      (m) => !pedido.ventas.some((v) => v.bodega === m.bodega),
+    );
+    if (!porVender.length) return;
 
-    if (cmd.vin != null) pedido.vin = normalizarVin(cmd.vin);
-    const usadas = new Map(this.validarLineas(cmd.usadas, 0).map((l) => [l.codigoUniversal, l.cantidad]));
-    for (const [codigo, cantidad] of usadas) {
-      const linea = pedido.lineas.find((l) => l.codigoUniversal === codigo);
-      if (!linea) throw new ValidationDomainError(`El repuesto ${codigo} no está apartado para la orden ${pedido.codigoOrden}`);
-      if (cantidad > linea.cantidadApartada) {
-        throw new ValidationDomainError(
-          `Para ${codigo} se apartaron ${linea.cantidadApartada} unidad(es) y se reportan ${cantidad} usadas`,
-        );
-      }
+    const clienteId = await this.clientes.comprador();
+    for (const m of porVender) {
+      pedido.ventas.push(
+        await this.ventas.registrarPorCobrar({
+          clienteId,
+          codigoOrden: pedido.codigoOrden,
+          vin: pedido.vin,
+          bodega: m.bodega,
+          observaciones: `Orden de taller ${pedido.codigoOrden}`,
+          lineas: m.lineas,
+        }),
+      );
+      pedido.actualizadoEn = new Date();
+      await this.pedidos.guardar(pedido);
     }
-    for (const l of pedido.lineas) l.cantidadEntregada = usadas.get(l.codigoUniversal) ?? 0;
-
-    // Lo usado se vende (sale de lo reservado) y queda por cobrar; normalmente es una sola bodega.
-    const vendidos = this.porBodega(pedido.lineas, pedido.codigoOrden, (l) => l.cantidadEntregada);
-    if (vendidos.length) {
-      const clienteId = await this.clientes.comprador();
-      for (const m of vendidos) {
-        pedido.ventas.push(
-          await this.ventas.registrarPorCobrar({
-            clienteId,
-            codigoOrden: pedido.codigoOrden,
-            vin: pedido.vin,
-            bodega: m.bodega,
-            observaciones: `Orden de taller ${pedido.codigoOrden}`,
-            lineas: m.lineas,
-          }),
-        );
-      }
-    }
-    // Lo que sobró vuelve a disponible.
-    for (const m of this.porBodega(pedido.lineas, pedido.codigoOrden, (l) => l.cantidadApartada - l.cantidadEntregada)) {
-      await this.stock.liberar(m);
-    }
-
-    pedido.estado = EstadoPedido.ENTREGADO;
-    return this.guardar(pedido, idMensaje);
   }
 
+  /** Solo un pedido APARTADO (sin despachar). Uno DESPACHADO ya tiene factura: se anularía (pendiente). */
   async cancelar(cmd: CancelarPedidoCommand): Promise<Pedido> {
     const pedido = await this.requerir(cmd.codigoOrden);
     const idMensaje = this.normalizarMensaje(cmd.idMensaje);
     if (pedido.mensajes.includes(idMensaje)) return pedido;
     this.exigirEstado(pedido, EstadoPedido.APARTADO, 'cancelar');
+    if (pedido.ventas.length) {
+      throw new ConflictError(
+        `La orden ${pedido.codigoOrden} ya tiene factura(s) ${pedido.ventas.map((v) => v.numero).join(', ')}: termine de despacharla`,
+      );
+    }
 
     for (const m of this.porBodega(pedido.lineas, pedido.codigoOrden, (l) => l.cantidadApartada)) {
       await this.stock.liberar(m);
@@ -155,10 +165,7 @@ export class PedidosService {
     const pedido = await this.requerir(cmd.codigoOrden);
     const idMensaje = this.normalizarMensaje(cmd.idMensaje);
     if (pedido.mensajes.includes(idMensaje)) return pedido;
-    this.exigirEstado(pedido, EstadoPedido.ENTREGADO, 'pagar');
-    if (!pedido.ventas.length) {
-      throw new ConflictError(`En la orden ${pedido.codigoOrden} no se usó ningún repuesto: no hay nada que cobrar`);
-    }
+    this.exigirEstado(pedido, EstadoPedido.DESPACHADO, 'pagar');
 
     const referencia = textoObligatorio(cmd.referenciaPago, 'La referencia del pago', 100);
     for (const v of pedido.ventas) await this.ventas.marcarPagada(v.id, referencia);
